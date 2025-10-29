@@ -21,59 +21,30 @@ function LeftPanel({ onSessionStart, sessionId, onReady }: LeftPanelProps) {
 
   // Connect to SSE when session starts
   useSSE(sessionId, (event) => {
-    console.log("[LeftPanel] SSE event received:", event);
-    console.log(
-      "[LeftPanel] Current phase:",
-      event.phase,
-      "step:",
-      event.step,
-      "progress:",
-      event.progress
-    );
     setProgressEvents((prev) => {
       const newEvents = [event, ...prev]; // Add new event at the START of the array
-      console.log(
-        "[LeftPanel] Updated events array:",
-        newEvents.map((e) => ({ phase: e.phase, step: e.step }))
-      );
       return newEvents;
     });
 
     // Check if build is ready
     if (event.phase === "READY") {
       onReady(true);
-    } else {
-      onReady(false);
     }
   });
 
   const handlePlaceSelect = (placeId: string) => {
-    console.log("[LeftPanel] handlePlaceSelect called with placeId:", placeId);
-    console.log(
-      "[LeftPanel] Business selected, starting build process for place:",
-      placeId
-    );
-
     if (!placeId) {
-      console.error("[LeftPanel] Place ID is empty or undefined");
       alert("Error: Place ID is missing. Please try selecting again.");
       return;
     }
 
     try {
-      console.log("[LeftPanel] Sending POST to /api/build with payload:", {
-        place_id: placeId,
-      });
       fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ place_id: placeId }),
       })
         .then((response) => {
-          console.log(
-            "[LeftPanel] Received response from API, status:",
-            response.status
-          );
           if (!response.ok) {
             throw new Error(
               `API request failed: ${response.status} ${response.statusText}`
@@ -82,8 +53,6 @@ function LeftPanel({ onSessionStart, sessionId, onReady }: LeftPanelProps) {
           return response.json();
         })
         .then((data) => {
-          console.log("[LeftPanel] Build session started:", data);
-          console.log("[LeftPanel] Session ID received:", data.session_id);
           onSessionStart(data.session_id);
           setProgressEvents([]); // Reset progress log
           onReady(false); // Reset ready state

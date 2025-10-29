@@ -1,0 +1,277 @@
+{
+  "model": "gpt-4o",
+  "temperature": 0.7,
+  "system_prompt": "You are a **dynamic landing page generation agent** that creates high-quality static websites for businesses.\n\n## 0) Scope\n\n- Static site generation only: `index.html`, `styles.css`, `script.js`, `/assets/...`\n- Frameworks allowed **via CDN** only when justified (Bootstrap, Tailwind, AOS, GLightbox, GSAP, jQuery on demand).\n- No forms, no API calls, no storage, no login.\n- Interactivity tier default: **Enhanced**.\n\n## 1) Inputs\n\nYou receive:\n- `google_data`: Raw Google Maps business data with place_id, name, address, types, photos, reviews, etc.\n- `mapper_data`: Enriched data from mapper agent with business_summary, logo_url, images, brand_colors, etc.\n- `mapper_data.optimized_images`: Pre-optimized image metadata with:\n  - `images`: Array of optimized images with `type` (logo/hero/section/thumbnail), `filename`, `path`, `width`, `height`, `size_kb`\n  - `hero_image`: Hero/banner image metadata (if available)\n  - `logo`: Logo image metadata (if available)\n  - `total_size_kb`: Total size of all images\n- `interactivity_tier`: \"basic\" | \"enhanced\" | \"highend\"\n- `asset_budget`: Target number of images (3-6)\n- `brand_color_enforcement`: Whether to strictly use brand colors from mapper_data\n\n## 2) Output Contract\n\nGenerate:\n- `index.html`: Complete HTML5 document\n- `styles.css`: All CSS styles\n- `script.js`: JavaScript for interactivity (within tier limits)\n\n**CRITICAL - IMAGE HANDLING**: Images are **already downloaded and optimized** by the system. You **MUST** use `mapper_data.optimized_images` to reference them:\n\n1. **DO NOT** include an `assets` field in your output - images are already saved to disk\n2. **DO NOT** try to download or reference image URLs from `mapper_data.assats.business_images_urls` or `stock_images_urls`\n3. **ONLY** use images from `mapper_data.optimized_images.images` which contains:\n   - `type`: \"logo\", \"hero\", \"section\", or \"thumbnail\"\n   - `filename`: The actual filename (e.g., \"logo.webp\", \"hero_0.jpg\")\n   - `path`: Relative path to use (e.g., \"assets/images/logo.webp\")\n   - `width`: Image width in pixels\n   - `height`: Image height in pixels\n   - `size_kb`: File size in KB\n\n4. **Image Usage Rules**:\n   - Use `mapper_data.optimized_images.hero_image.path` for the hero/banner image (if available)\n   - Use `mapper_data.optimized_images.logo.path` for the logo (if available)\n   - Use `mapper_data.optimized_images.images` array for section/thumbnail images\n   - **ALWAYS** include `width` and `height` attributes from the metadata to prevent CLS\n   - Use `loading=\"lazy\"` for all below-fold images (non-hero images)\n\nExample:\n```html\n<!-- Hero image -->\n<img src=\"assets/images/hero_0.webp\" alt=\"...\" width=\"1920\" height=\"1080\">\n\n<!-- Logo -->\n<img src=\"assets/images/logo.png\" alt=\"...\" width=\"512\" height=\"512\">\n\n<!-- Section images (lazy loaded) -->\n<img src=\"assets/images/business_0.webp\" alt=\"...\" width=\"1200\" height=\"800\" loading=\"lazy\">\n```\n\nAll files must be standalone, static, with valid relative paths. Each run must be visually and structurally unique.\n\n## 3) QA/Validation Loop (CRITICAL)\n\nYou must execute the following **validate → fix → re‑validate** loop (max 3 attempts). If a check fails, fix and regenerate only the necessary parts.\n\n### 3.1 Structural & Linking\n- [ ] Files exist: `index.html`, `styles.css`, `script.js`.\n- [ ] `/assets/images` directory is already populated with optimized images (you don't need to create it).\n- [ ] All `<link>`, `<script>`, and `<img>` `src/href` resolve to existing files in the bundle or valid CDN URLs.\n- [ ] All `<img>` tags use paths from `mapper_data.optimized_images` (e.g., `assets/images/logo.webp`).\n- [ ] `index.html` references `styles.css` and `script.js` with correct relative paths.\n- [ ] No absolute local paths.\n- [ ] **DO NOT** include an `assets` field in your output - images are already handled.\n\n### 3.2 HTML Semantics & SEO\n- [ ] Valid HTML5 doctype and `<meta name=\"viewport\">`.\n- [ ] `<title>` present and non‑generic.\n- [ ] `<meta name=\"description\">` present and < 170 chars.\n- [ ] Required sections present: hero, about/services, features/products, testimonials/reviews, CTA/footer.\n- [ ] Headings: one `<h1>`, logical `<h2>` order (no skipped levels).\n- [ ] No empty anchors or headings.\n\n### 3.3 Accessibility\n- [ ] Every `<img>` has meaningful `alt`.\n- [ ] Keyboard focus visible on links/buttons.\n- [ ] Color contrast AA for body text (heuristic check).\n- [ ] `prefers-reduced-motion` respected (animations disabled).\n- [ ] ARIA attributes only where necessary.\n\n### 3.4 CSS Quality\n- [ ] Uses Grid/Flex for layout (not tables).\n- [ ] No massive inline styles; CSS file < 200 KB.\n- [ ] Theme uniqueness: non‑default color palette and font pairing (use mapper_data.brand_colors if provided).\n- [ ] No @import of remote CSS except CDNs as allowed.\n- [ ] Media queries for mobile responsiveness exist.\n\n### 3.5 JS Behavior (Tier Enforcement)\n- [ ] No forms, fetch/XHR, storage (localStorage/sessionStorage/cookies).\n- [ ] `script.js` < ~10 KB gzipped.\n- [ ] Interactivity Tier:\n  - **Basic**: smooth scroll, mobile nav toggle, dynamic year.\n  - **Enhanced (default)**: + scroll reveal, lazy images, back‑to‑top, lightbox.\n  - **High‑end (opt‑in)**: + parallax/theme logic.\n- [ ] `defer` used or scripts at end of body.\n- [ ] If CDN scripts used, they match allowed list and are necessary.\n\n### 3.6 Performance & UX\n- [ ] Below‑the‑fold images include `loading=\"lazy\"`.\n- [ ] Hero/media have `width` and `height` attributes from `optimized_images` to avoid CLS.\n- [ ] Total image weight <= 1.5 MB (images are pre-optimized: hero ≤400KB, section ≤250KB, logo ≤50KB, thumbnails ≤150KB each, gallery total ≤1MB).\n- [ ] Images are optimized WebP/JPEG format as specified in optimization rules.\n- [ ] Lighthouse‑style heuristics: avoid large DOM bloats, minimize blocking resources.\n\n### 3.7 Business Fit\n- [ ] Visual theme matches `business_type` heuristics.\n- [ ] Copy reflects provided data (name, address, rating if present).\n- [ ] Reviews pulled in (if present) and sanitized.\n- [ ] Brand colors from mapper_data used if brand_color_enforcement is true.\n\n## 4) Image Optimization Rules (Already Applied)\n\nImages are automatically downloaded and optimized before HTML generation. The following specifications are enforced:\n\n### 4.1 Hero / Banner Images\n- Resolution: up to 1920×1080 (Full HD)\n- File size: ≤ 400 KB\n- Format: JPEG (progressive) or WebP\n- Notes: Optimized aggressively. Large hero images are the biggest bandwidth offenders. Always lazy-load below the fold.\n\n### 4.2 Section / Feature Images\n- Resolution: 1200×800 max\n- File size: ≤ 250 KB\n- Count: typically 2–4\n- Format: WebP preferred, fallback to JPEG\n\n### 4.3 Logo / Brand Marks\n- Resolution: 512×512 or smaller\n- File size: ≤ 50 KB\n- Format: SVG preferred; otherwise transparent PNG\n- Notes: Validate background transparency; no white boxes.\n\n### 4.4 Thumbnails / Gallery Images\n- Resolution: 800×600 or smaller\n- File size: ≤ 150 KB each\n- Count: up to 6\n- Format: WebP or JPEG\n- Notes: Compress more aggressively; keep total gallery weight under 1 MB.\n\n### 4.5 Total Bundle Weight\n- Combined `/assets/images` directory stays under ~1.5 MB.\n- This aligns with the validator's performance rule and ensures a smooth Lighthouse score on 4G.\n\n### 4.6 Optimization Rules (Automatically Applied)\n- All images converted to WebP when possible.\n- Lightweight optimization using Pillow (optimize=True).\n- EXIF metadata stripped.\n- Aspect ratio maintained; no upscaling beyond original resolution.\n- Always include `width` and `height` attributes in HTML for CLS prevention.\n\n### 3.8 Image Usage (Already Optimized)\n**Image URLs from mapper_data are automatically validated, downloaded, and optimized. You only need to reference them from `optimized_images`.**\n\n- [ ] All images in HTML reference paths from `mapper_data.optimized_images`\n- [ ] Use `width` and `height` attributes from image metadata to prevent CLS\n- [ ] Use `loading=\"lazy\"` for all below-fold images (non-hero images)\n\n## 4) Automatic Fix Rules\n\nWhen a test fails, apply these remediation patterns before regenerating:\n- Missing `meta description` → synthesize concise description from `business_summary`.\n- Missing alt text → derive from filename or `photos` metadata.\n- Heading order wrong → relevel headings; ensure single h1.\n- No lazy loading → add `loading=\"lazy\"` for non‑hero images.\n- JS too large → drop non‑essential effects; prefer native over CDN.\n- Interactivity tier mismatch → enforce required features; remove extra features.\n- Link errors → fix relative paths; remove dead references.\n- Accessibility contrast issue → increase color contrast using WCAG AA heuristics.\n- **Image URL validation failure** → Replace failing URLs:\n  - If `logo_url` fails: try fallback strategies (favicon, `/logo.svg`, Wikipedia), or set to null\n  - If `business_images_urls` fail: remove failing URLs (especially `googleusercontent.com/places`), replace with 2-4 stock images from whitelist matching business_summary\n  - If `stock_images_urls` fail: convert Unsplash page URLs to CDN format, replace with whitelisted CDN URLs, ensure all pass HTTP GET and decode\n- **Stock image URL format fix**:\n  - Convert `https://unsplash.com/photos/<id>` → `https://images.unsplash.com/photo-<id>?auto=format&fit=max&w=1600&q=80`\n  - Ensure all stock URLs are direct CDN image URLs, not gallery pages\n\n## 5) QA Report\n\nInclude a `qa_report` in your output with:\n- `status`: \"PASS\" or \"FAIL\"\n- `tier`: interactivity tier used\n- `fixed`: List of fixes applied\n- `checks`: List of check results\n\nAlso inject a `<!-- QA REPORT ... -->` HTML comment at the top of `index.html` containing:\n- Timestamp\n- Interactivity tier\n- Errors fixed (list)\n- Final status: PASS/FAIL\n\nExample:\n```html\n<!-- QA REPORT\ntimestamp: 2025-10-29T09:00:00Z\ntier: enhanced\nfixed: [\"added meta description\", \"set alt text for 3 images\"]\nstatus: PASS\n-->\n```\n\n## 6) JS Behavior Recap (Allowed CDNs)\n\n- Native ES6 preferred.\n- Allowed when needed: Bootstrap bundle, AOS, GLightbox, GSAP, vanilla-lazyload, jQuery (on request).\n- Always respect `prefers-reduced-motion`.\n- Keep compressed size small and avoid blocking main thread.\n\nYou must ensure your output passes all QA checks before returning. If checks fail, internally fix and retry up to 3 times.",
+  "user_message": {
+    "google_data": {
+      "place_id": "ChIJuzL4KZ5LHRURmodwHUMNVPQ",
+      "name": "places/ChIJuzL4KZ5LHRURmodwHUMNVPQ",
+      "formatted_address": "Yigal Alon St 90, Tel Aviv-Yafo, Israel",
+      "types": [
+        "meal_delivery",
+        "meal_takeaway",
+        "food_delivery",
+        "pizza_restaurant",
+        "restaurant",
+        "food",
+        "point_of_interest",
+        "establishment"
+      ],
+      "primary_type": "meal_delivery",
+      "website_url": "https://www.dominos.co.il/%D7%A1%D7%A0%D7%99%D7%A3-%D7%99%D7%92%D7%90%D7%9C-%D7%90%D7%9C%D7%95%D7%9F",
+      "google_maps_url": "https://maps.google.com/?cid=17605711425205995418&g_mp=CiVnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLkdldFBsYWNlEAIYBCAA",
+      "location": {
+        "latitude": 32.0673618,
+        "longitude": 34.793285499999996
+      },
+      "viewport": {
+        "low": {
+          "latitude": 32.0660357697085,
+          "longitude": 34.791829869708494
+        },
+        "high": {
+          "latitude": 32.0687337302915,
+          "longitude": 34.79452783029149
+        }
+      },
+      "contact": {
+        "international_phone": "+972 76-804-8974"
+      },
+      "status": {
+        "open_now": true,
+        "weekday_descriptions": [
+          "Monday: 12:00 PM – 12:00 AM",
+          "Tuesday: 12:00 PM – 12:00 AM",
+          "Wednesday: 12:00 PM – 12:00 AM",
+          "Thursday: 12:00 PM – 12:00 AM",
+          "Friday: 12:00 PM – 12:00 AM",
+          "Saturday: 12:00 PM – 12:00 AM",
+          "Sunday: 12:00 PM – 12:00 AM"
+        ]
+      },
+      "rating": 3,
+      "user_rating_count": 386,
+      "price_level": "PRICE_LEVEL_MODERATE",
+      "editorial_summary": null,
+      "reviews": [
+        {
+          "rating": 1,
+          "text": "Avoid at all costs, delivery tracking was slowly progressing and delaying for 2 hours until suddenly it said “arrived”, but no pizza was ever delivered.\n\nCustomer support is unavailable, nobody to talk to, and best they can do is refund a day after.\n\nYou better off making homemade pizza instead of relying on this place.",
+          "publish_time": "2025-09-15T16:57:30.054436146Z",
+          "relative_time": "a month ago",
+          "author": "Igor Okun",
+          "author_uri": "https://www.google.com/maps/contrib/102915599455007370596/reviews",
+          "author_photo_uri": "https://lh3.googleusercontent.com/a/ACg8ocLRyKIuGKFnnuPpH9xMuw-T3_UVKyt-KHqXc9tKTsjsjBzcrw=s128-c0x00000000-cc-rp-mo"
+        },
+        {
+          "rating": 1,
+          "text": "Terrible service, did not deliver the pizza, and the marked the delivery as done. No one to talk with",
+          "publish_time": "2025-06-23T20:36:37.032503191Z",
+          "relative_time": "4 months ago",
+          "author": "Liad Harduf",
+          "author_uri": "https://www.google.com/maps/contrib/108436987769492873418/reviews",
+          "author_photo_uri": "https://lh3.googleusercontent.com/a-/ALV-UjW73HtQbIHZMuwMMmR47GDfXv00aVetyfq8YHluMnqaFUWHgWncfg=s128-c0x00000000-cc-rp-mo-ba4"
+        },
+        {
+          "rating": 1,
+          "text": "AVOID AT ALL COSTS\nDELIVERY TAKES FOREVER, THE PIZZA ARRIVES COLD, NOBODY TO TALK TO OR SPEAK TO.",
+          "publish_time": "2025-08-08T13:26:21.954098444Z",
+          "relative_time": "2 months ago",
+          "author": "youvebeenzapped",
+          "author_uri": "https://www.google.com/maps/contrib/102890531848193072282/reviews",
+          "author_photo_uri": "https://lh3.googleusercontent.com/a/ACg8ocJnN-cRSbxIltTaIh2a3c3WMETul4en5HbL6m6vv7kUQQZXIw=s128-c0x00000000-cc-rp-mo-ba3"
+        },
+        {
+          "rating": 1,
+          "text": "It taken them hour and a half to deliver the pizza and I am five minutes away from them I couldn’t go there by myself because I’m in the hospital nearby and still took them in an hour and a half to deliver the pizza and when I was calling them, they’re  telling me why you cannot come to take the pizza if it’s  five minutes away why do you need the delivery? So rude and disrespectful for the patients in the hospital 😡",
+          "publish_time": "2024-12-21T16:53:52.878538Z",
+          "relative_time": "10 months ago",
+          "author": "Leon Pabrekar",
+          "author_uri": "https://www.google.com/maps/contrib/104731655950270790176/reviews",
+          "author_photo_uri": "https://lh3.googleusercontent.com/a/ACg8ocLkoNBTOrbbPdclne5bhC-wiPM_8sfILmcOf2ayLs-vXezG0g=s128-c0x00000000-cc-rp-mo"
+        },
+        {
+          "rating": 1,
+          "text": "Just no!\nWhat an horrible experience.\nNot only the prices went sky high to a mediocre pizza\nThe service, that once was good, hit rock bottom.\nAfter ordering on the app, and the pizza was nowhere to be seen over an hour. It was immposibble to reach them on the phone. The chat took it's time to figure out the issue, the order never arrived the\nBranch.\nYou lost a regular, I'll no longer order pizza from  you or any of your branches.",
+          "publish_time": "2023-06-10T12:37:40.799379Z",
+          "relative_time": "2 years ago",
+          "author": "ido ori",
+          "author_uri": "https://www.google.com/maps/contrib/104516852945672106127/reviews",
+          "author_photo_uri": "https://lh3.googleusercontent.com/a/ACg8ocI9QfgTCiQb66j270oZSD8vCUV6S5dawlCSwIEHTZW0yUWscTY=s128-c0x00000000-cc-rp-mo-ba3"
+        }
+      ],
+      "photos": [
+        {
+          "name": "places/ChIJuzL4KZ5LHRURmodwHUMNVPQ/photos/AWn5SU4O0pw6dHGwh222fTW75itL_tOOUpTyvBy0uWt_6MHpZRkxMFdwC0dIBq_X4AVUHGIMa5Q405pVQFkH0bFuun97b7k7JpyrfzNxmcdwKMLggK79tTzuX41iP84UWQlQcnm1fKQQZFSJZjeI8GE4RVHsOVhXv2IN4HFcvyNm8Grhqd6ZUBIwleK4Fk7_lNJA8Vnyuy4Plhe2VS2ohQ3CJYnclTPF4oWWwKKVrU7FV_DjVbDa5P3VI-5f8l5UTpCuObOKdC4e0LfoLBEduamDzHPVTfpfViF2Vf11LM5FtwMzty1VpXUQbToNWzP7Ii5wPcYSXfHxBMEcjbGk1L8eG64Dk9TxjzvzGCLOQiTCmlhsXVacizj8hS3UPLM1a18k71mxgCJCet2ZylwnVTxHUPsDsbHZdzuFVjWCEiyIsjGuY-nB",
+          "width_px": 4000,
+          "height_px": 3000,
+          "author_attributions": [
+            {
+              "displayName": "Yael David",
+              "uri": "https://maps.google.com/maps/contrib/102944617577076592284",
+              "photoUri": "https://lh3.googleusercontent.com/a/ACg8ocJuDkFoohotAo4Lk18wFCLyB1S56W20f6o4nbIqL6yCHYbOVBKo=s100-p-k-no-mo"
+            }
+          ],
+          "download_uri": "https://lh3.googleusercontent.com/place-photos/AEkURDy9JAjiVXVSOph8OeQgf-qqQ-iEYkIIWhix_paQnZ8nyVTtqQBrRJUl853VHNjkgB2IOlFd502_lruJrmPr41DGZgCk6kzigQLoNY_o-d4-9rNpxux_Wz51NikK6XIkjSul6jiDrMVJ9_J2L5M=s4800-w1600"
+        },
+        {
+          "name": "places/ChIJuzL4KZ5LHRURmodwHUMNVPQ/photos/AWn5SU76utBOSaGe8RVbktjf3Q663LKkDjtt1vyVpY_nt51whzuDnguodhAQJzi_Bcd3CzkVXtBgrrmj88iRL0sz7FljChk4Agn6TRBt_x-6nc9-3KZAbu_T0UAMM68iMok5arI7_1DpYFcXJ0tRPQluldQsZf5ZjqTiUZ9wiv6sEvcdq4DD1yuPJ9B4XBFq2yJ3pcq02AIGGOfxLA4Akb_kBmHWqu4Wieh5o5PRhp6BEUdqAnr2_d_vkBMhNEEVh33vds7X5CUc_pFtYAbqV2M--M9Rq0-HIDXlyvWoYdfgJL3mtA",
+          "width_px": 870,
+          "height_px": 630,
+          "author_attributions": [
+            {
+              "displayName": "דומינוס פיצה תל אביב - יגאל אלון",
+              "uri": "https://maps.google.com/maps/contrib/100866571042272672329",
+              "photoUri": "https://lh3.googleusercontent.com/a-/ALV-UjXo1vNl-nF2P1E-B5PsCtH-6xPh12eKWBGCPBN8w9M5DCm8w_U=s100-p-k-no-mo"
+            }
+          ],
+          "download_uri": "https://lh3.googleusercontent.com/places/ANXAkqGJEFcttlYH_AhTm33NHw_J8TG8diOcCqxWrpq5qYYMfnqKHIjFrzNcnMTLsG3tfjsqghmv8aImUgxmKa0bwxslBwra6zncv-A=s4800-w870"
+        },
+        {
+          "name": "places/ChIJuzL4KZ5LHRURmodwHUMNVPQ/photos/AWn5SU4C70kA7X46Q99v3qJfrbeyN0EAMaW_hYKtcJ1RtUb0AL6H6YmYAsk3Rp2m32Rx6WyyRaWy25Wx5WGr1MRfVtStJY18i09nIdztJ8BYVSBQE_AdYPPGrEUY7Bn7AT8aQ4lsmZ01CmYaPpOJ30HWdfXeV1Ro51KvPbDBkYpjl8JSrA6f7nH0rbSG3x7jXMwqmIR-9Z8JGOOq-zddJ357Duj_wIOg7o4625lulQrRE5xvo3WgyE99XZQzCFLB5ZdxKC4vEUX2GUFjCFL5lIDwFFBPpiSWOdIVmM0wFPJSgnUAsg",
+          "width_px": 2001,
+          "height_px": 1500,
+          "author_attributions": [
+            {
+              "displayName": "דומינוס פיצה תל אביב - יגאל אלון",
+              "uri": "https://maps.google.com/maps/contrib/100866571042272672329",
+              "photoUri": "https://lh3.googleusercontent.com/a-/ALV-UjXo1vNl-nF2P1E-B5PsCtH-6xPh12eKWBGCPBN8w9M5DCm8w_U=s100-p-k-no-mo"
+            }
+          ],
+          "download_uri": "https://lh3.googleusercontent.com/places/ANXAkqHKAdwgRXKIk62TCKzqL79jf6UV-meDYW4Nh77JKslk_SII9rTHojd7maSoTbkbE2_IGbGQCCEuRMGR7n6E2YmwI43jajioK_w=s4800-w1600"
+        },
+        {
+          "name": "places/ChIJuzL4KZ5LHRURmodwHUMNVPQ/photos/AWn5SU7njs2J3erX2e8kDIV-HyURqO24FvQFXz-WK9_L9PU3fhQNaTLvZt64nKliSt7QLmUPiKx-WWCacjNZSqEHUqiwnUU9mFKiBjys4x0_8skKCFfAPVi3t2nnQEQNHlx5_VvarHwVB8olIKvbY8F-VDK2UoXbw62K3Eeg60IK35-wD6ZwI6Lgaa-37eIVqXPMezuBirYXS_NUs_NNd9M7QTEY_kI9OlNoIMlmZIxiYllar3VOkmVwSlm6WrUQK6619waaf3ceC8Xhi6MACSmYD_U7RPfzSBO0aAkYUsn9sn2iRg",
+          "width_px": 2001,
+          "height_px": 1500,
+          "author_attributions": [
+            {
+              "displayName": "דומינוס פיצה תל אביב - יגאל אלון",
+              "uri": "https://maps.google.com/maps/contrib/100866571042272672329",
+              "photoUri": "https://lh3.googleusercontent.com/a-/ALV-UjXo1vNl-nF2P1E-B5PsCtH-6xPh12eKWBGCPBN8w9M5DCm8w_U=s100-p-k-no-mo"
+            }
+          ],
+          "download_uri": "https://lh3.googleusercontent.com/places/ANXAkqFsrqqHTEVAGcm7le4ggGHBCIxNMmP8UUi1AWoAoukcIPJbhV4-Bbk79yiwJqaMYXFOstbEazQq6Zg8wVx8gyHr2MVAaQtWF-s=s4800-w1600"
+        }
+      ]
+    },
+    "mapper_data": {
+      "business_page_url": "https://www.dominos.co.il/%D7%A1%D7%A0%D7%99%D7%A3-%D7%99%D7%92%D7%90%D7%9C-%D7%90%D7%9C%D7%95%D7%9F",
+      "business_summary": "Domino's Pizza on Yigal Alon St in Tel Aviv offers pizza delivery and takeaway services as part of the global Domino's Pizza chain.",
+      "assats": {
+        "logo_url": "https://www.dominos.co.il/image/logo.png",
+        "business_images_urls": [
+          "https://lh3.googleusercontent.com/place-photos/AEkURDy9JAjiVXVSOph8OeQgf-qqQ-iEYkIIWhix_paQnZ8nyVTtqQBrRJUl853VHNjkgB2IOlFd502_lruJrmPr41DGZgCk6kzigQLoNY_o-d4-9rNpxux_Wz51NikK6XIkjSul6jiDrMVJ9_J2L5M=s4800-w1600",
+          "https://lh3.googleusercontent.com/places/ANXAkqGJEFcttlYH_AhTm33NHw_J8TG8diOcCqxWrpq5qYYMfnqKHIjFrzNcnMTLsG3tfjsqghmv8aImUgxmKa0bwxslBwra6zncv-A=s4800-w870",
+          "https://lh3.googleusercontent.com/places/ANXAkqHKAdwgRXKIk62TCKzqL79jf6UV-meDYW4Nh77JKslk_SII9rTHojd7maSoTbkbE2_IGbGQCCEuRMGR7n6E2YmwI43jajioK_w=s4800-w1600",
+          "https://lh3.googleusercontent.com/places/ANXAkqFsrqqHTEVAGcm7le4ggGHBCIxNMmP8UUi1AWoAoukcIPJbhV4-Bbk79yiwJqaMYXFOstbEazQq6Zg8wVx8gyHr2MVAaQtWF-s=s4800-w1600"
+        ],
+        "stock_images_urls": [
+          "https://images.unsplash.com/photo-1601924638867-3fad333fbd6c?auto=format&fit=max&w=1600&q=80",
+          "https://images.unsplash.com/photo-1594007654216-6d98f8e3f31a?auto=format&fit=max&w=1600&q=80"
+        ],
+        "brand_colors": {
+          "primary": "#006491",
+          "secondary": "#E31837"
+        }
+      },
+      "qa_report": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "Schema Compliance",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Consistency Checks",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "URL Health & Canonicalization",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Image Validation & Domain Policy",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Brand Colors Extraction",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Chain Detection",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Deduplication & Safety",
+            "passed": true,
+            "details": ""
+          },
+          {
+            "name": "Completeness & Self-Healing Strategies",
+            "passed": true,
+            "details": ""
+          }
+        ],
+        "retries_used": 0,
+        "notes": null
+      },
+      "optimized_images": {
+        "images": [
+          {
+            "type": "section",
+            "filename": "business_0.webp",
+            "path": "assets/images/business_0.webp",
+            "width": 1066,
+            "height": 800,
+            "size_kb": 196.015625
+          },
+          {
+            "type": "section",
+            "filename": "business_1.webp",
+            "path": "assets/images/business_1.webp",
+            "width": 870,
+            "height": 630,
+            "size_kb": 94.708984375
+          },
+          {
+            "type": "section",
+            "filename": "business_2.webp",
+            "path": "assets/images/business_2.webp",
+            "width": 1067,
+            "height": 799,
+            "size_kb": 204.18359375
+          },
+          {
+            "type": "section",
+            "filename": "business_3.webp",
+            "path": "assets/images/business_3.webp",
+            "width": 1067,
+            "height": 799,
+            "size_kb": 126.857421875
+          }
+        ],
+        "hero_image": {
+          "type": "hero",
+          "filename": "business_0.webp",
+          "path": "assets/images/business_0.webp",
+          "width": 1066,
+          "height": 800,
+          "size_kb": 196.015625
+        },
+        "total_size_kb": 621.765625,
+        "logo": null
+      }
+    },
+    "interactivity_tier": "enhanced",
+    "asset_budget": 3,
+    "brand_color_enforcement": true
+  },
+  "has_response_schema": true
+}

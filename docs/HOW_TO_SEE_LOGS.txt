@@ -1,0 +1,72 @@
+================================================================================
+HOW TO SEE YOUR SERVER LOGS
+================================================================================
+
+Your servers are running in SEPARATE PowerShell windows. Here's how to see them:
+
+METHOD 1: Look for the Open Windows
+------------------------------------
+1. Look at your taskbar for multiple PowerShell windows
+2. Each window has a title like:
+   - "Agents Service - Port 8001"
+   - "Backend Server - Port 8000"
+   - "Frontend Server - Port 5173"
+3. Click each window to see the logs
+
+METHOD 2: Alt+Tab to Find Them
+--------------------------------
+1. Press Alt+Tab
+2. Look for PowerShell windows with server output
+3. Each one shows different logs
+
+METHOD 3: Start Fresh with Visible Output
+------------------------------------------
+1. Close all existing PowerShell windows (or they'll show old logs)
+2. Run this command in your current terminal:
+
+   powershell -ExecutionPolicy Bypass .\scripts\start-dev.ps1
+
+3. Watch this terminal for all the logs!
+
+METHOD 4: Check if Servers Are Running
+----------------------------------------
+Run this command to see if servers are running:
+
+   netstat -ano | findstr "8000 8001 5173"
+
+If you see "LISTENING" entries, your servers are running.
+
+
+WHAT TO LOOK FOR IN THE LOGS:
+------------------------------
+Backend Window (port 8000):
+  - "[BUILD] Session abc123: Calling google_fetcher..."
+  - "[BUILD] Session abc123: Agents service completed"
+  - Any validation errors
+
+Agents Window (port 8001):
+  - "[Designer] Calling gpt-4o"
+  - "[Mapper] Calling gpt-4o"
+  - "[Generator] Calling gpt-4o"
+  - "[QA] Calling gpt-4o"
+  - Validation errors like "Validation error: 1 validation error for..."
+
+Frontend Window (port 5173):
+  - "Local: http://localhost:5173"
+  - Vite compilation status
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+If you can't see any logs:
+1. The servers might not be running - check with netstat command above
+2. The windows might be minimized - check Alt+Tab
+3. Restart everything by running the start script again
+
+If logs show validation errors:
+- Look for the specific error message
+- It will say what field is missing or what type is wrong
+- Share that error message with me for help fixing it
+

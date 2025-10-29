@@ -16,7 +16,7 @@ Start or replay a build for a `place_id`.
   "render_prefs": {
     "language": "en",
     "direction": "ltr",
-    "allow_external_cdns": false,
+    "allow_external_cdns": true,
     "max_reviews": 6
   }
 }

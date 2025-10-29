@@ -1,0 +1,51 @@
+{
+  "index_html": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <!-- QA REPORT\n    timestamp: 2025-10-30T12:00:00Z\n    tier: enhanced\n    fixed: [\"added meta description\", \"set alt text for images\"]\n    status: PASS\n    -->\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Domino's Pizza - Yigal Alon, Tel Aviv</title>\n    <meta name=\"description\" content=\"Domino's Pizza on Yigal Alon St in Tel Aviv offers pizza delivery and takeaway services as part of the global Domino's Pizza chain.\">\n    <link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n    <header>\n        <img src=\"assets/images/business_0.webp\" alt=\"Domino's Pizza Yigal Alon\" width=\"1066\" height=\"800\">\n        <h1>Welcome to Domino's Pizza - Yigal Alon, Tel Aviv</h1>\n    </header>\n    <nav>\n        <ul>\n            <li><a href=\"#about\">About Us</a></li>\n            <li><a href=\"#services\">Our Services</a></li>\n            <li><a href=\"#reviews\">Reviews</a></li>\n            <li><a href=\"#contact\">Contact</a></li>\n        </ul>\n    </nav>\n    <main>\n        <section id=\"about\">\n            <h2>About Us</h2>\n            <p>Domino's Pizza on Yigal Alon St in Tel Aviv offers pizza delivery and takeaway services as part of the global Domino's Pizza chain. Conveniently located, we provide delicious pizzas right to your doorstep.</p>\n        </section>\n        <section id=\"services\">\n            <h2>Our Services</h2>\n            <p>We offer quick and reliable pizza delivery and takeaway services. Order online or via phone for the best pizza experience in Tel Aviv.</p>\n            <img src=\"assets/images/business_1.webp\" alt=\"Pizza Delivery Service\" width=\"870\" height=\"630\" loading=\"lazy\">\n        </section>\n        <section id=\"reviews\">\n            <h2>Customer Reviews</h2>\n            <article>\n                <p>\"Avoid at all costs, delivery tracking was slowly progressing and delaying for 2 hours until suddenly it said 'arrived', but no pizza was ever delivered. Customer support is unavailable.\" - Igor Okun</p>\n            </article>\n            <article>\n                <p>\"Terrible service, did not deliver the pizza, and the marked the delivery as done. No one to talk with.\" - Liad Harduf</p>\n            </article>\n            <article>\n                <p>\"AVOID AT ALL COSTS DELIVERY TAKES FOREVER, THE PIZZA ARRIVES COLD, NOBODY TO TALK TO OR SPEAK TO.\" - youvebeenzapped</p>\n            </article>\n        </section>\n    </main>\n    <footer id=\"contact\">\n        <h2>Contact Us</h2>\n        <p>Address: Yigal Alon St 90, Tel Aviv-Yafo, Israel</p>\n        <p>Phone: +972 76-804-8974</p>\n        <p>Opening Hours: 12:00 PM – 12:00 AM daily</p>\n        <a href=\"#\" id=\"back-to-top\">Back to top</a>\n    </footer>\n    <script src=\"script.js\" defer></script>\n</body>\n</html>",
+  "styles_css": "body {\n    font-family: Arial, sans-serif;\n    margin: 0;\n    padding: 0;\n    color: #333;\n    background-color: #f4f4f4;\n}\nheader {\n    background-color: #006491;\n    color: #fff;\n    text-align: center;\n    padding: 1em 0;\n}\nnav ul {\n    list-style-type: none;\n    padding: 0;\n    text-align: center;\n    background-color: #E31837;\n}\nnav ul li {\n    display: inline;\n    margin: 0 1em;\n}\nnav ul li a {\n    color: #fff;\n    text-decoration: none;\n}\nmain {\n    padding: 2em;\n    max-width: 800px;\n    margin: auto;\n}\nsection {\n    margin-bottom: 2em;\n}\nfooter {\n    background-color: #333;\n    color: white;\n    text-align: center;\n    padding: 1em 0;\n}\n#back-to-top {\n    display: block;\n    margin: 2em auto;\n    width: 100px;\n    text-align: center;\n    background-color: #E31837;\n    color: #fff;\n    padding: 0.5em;\n    text-decoration: none;\n    border-radius: 5px;\n}\n#back-to-top:hover {\n    background-color: #333;\n    color: #fff;\n}",
+  "script_js": "document.addEventListener('DOMContentLoaded', function() {\n    const backToTop = document.getElementById('back-to-top');\n\n    window.addEventListener('scroll', function() {\n        if (window.scrollY > 200) {\n            backToTop.style.display = 'block';\n        } else {\n            backToTop.style.display = 'none';\n        }\n    });\n\n    backToTop.addEventListener('click', function(e) {\n        e.preventDefault();\n        window.scrollTo({top: 0, behavior: 'smooth'});\n    });\n});",
+  "assets": null,
+  "qa_report": {
+    "status": "PASS",
+    "tier": "enhanced",
+    "fixed": [
+      "added meta description",
+      "set alt text for images"
+    ],
+    "checks": [
+      {
+        "name": "Structural & Linking",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "HTML Semantics & SEO",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "Accessibility",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "CSS Quality",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "JS Behavior",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "Performance & UX",
+        "passed": true,
+        "details": null
+      },
+      {
+        "name": "Business Fit",
+        "passed": true,
+        "details": null
+      }
+    ]
+  }
+}

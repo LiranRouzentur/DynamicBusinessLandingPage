@@ -94,14 +94,10 @@ function ProgressLog({ events }: ProgressLogProps) {
   };
 
   const latestEvent = getLatestEvent();
-  console.log("[ProgressLog] Latest event:", latestEvent);
-  console.log("[ProgressLog] Latest event phase:", latestEvent?.phase);
 
   const phaseConfig = latestEvent
     ? PHASE_CONFIG[latestEvent.phase] || PHASE_CONFIG.IDLE
     : null;
-
-  console.log("[ProgressLog] Phase config:", phaseConfig);
 
   const formatTimestamp = (ts: string) => {
     try {

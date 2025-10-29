@@ -1,0 +1,107 @@
+{
+  "status": "FAIL",
+  "violations": [
+    {
+      "id": "SEC.CSP_MISSING",
+      "severity": "error",
+      "where": "index.html",
+      "hint": "Add a Content Security Policy (CSP) to the HTML head to restrict resources to trusted origins.",
+      "owner": "generator"
+    },
+    {
+      "id": "SEC.TARGET_BLANK_NO_NOOPENER",
+      "severity": "error",
+      "where": "index.html",
+      "hint": "Ensure all external links with target=\"_blank\" include rel=\"noopener noreferrer\" for security.",
+      "owner": "generator"
+    },
+    {
+      "id": "SEC.UNSAFE_ASSET_TYPE",
+      "severity": "error",
+      "where": "assets",
+      "hint": "Ensure all assets are safe and do not include executable file types.",
+      "owner": "generator"
+    },
+    {
+      "id": "SEC.UNSAFE_SVG",
+      "severity": "error",
+      "where": "assets",
+      "hint": "Ensure SVG images do not contain scripts or unsafe content.",
+      "owner": "generator"
+    }
+  ],
+  "qa_report": {
+    "attempts_used": 0,
+    "metrics": {
+      "js_gzip_kb": 0.25,
+      "css_size_kb": 0.92,
+      "image_count": 4,
+      "total_image_weight_mb": 0.61,
+      "dom_node_count": null
+    },
+    "sections": [
+      {
+        "name": "Structure & Linking",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "HTML Semantics & SEO",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "Accessibility",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "CSS Quality",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "JS Behavior",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "Performance & UX",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "Business Fit",
+        "passed": true,
+        "details": []
+      },
+      {
+        "name": "Security",
+        "passed": false,
+        "details": [
+          "Missing Content Security Policy (CSP).",
+          "External links with target=\"_blank\" missing rel=\"noopener noreferrer\".",
+          "Assets include unsafe types or SVG content."
+        ]
+      },
+      {
+        "name": "URL & Image Validation",
+        "passed": true,
+        "details": []
+      }
+    ]
+  },
+  "repair_suggestions": {
+    "needs_structural_fix": false,
+    "needs_brand_fix": false,
+    "needs_security_fix": true,
+    "messages_for_generator": [
+      "Add a Content Security Policy (CSP) in the HTML head to restrict resources to trusted origins.",
+      "Ensure all external links with target=\"_blank\" include rel=\"noopener noreferrer\" for security.",
+      "Verify that all assets are safe and do not include executable file types.",
+      "Ensure SVG images do not contain scripts or unsafe content."
+    ],
+    "messages_for_mapper": [],
+    "messages_for_orchestrator": []
+  }
+}

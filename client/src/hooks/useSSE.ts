@@ -28,32 +28,28 @@ export function useSSE(
   useEffect(() => {
     if (!sessionId) return;
 
-    console.log("SSE: Connecting to session:", sessionId);
-
     // Connect to SSE stream
     const eventSource = new EventSource(`/sse/progress/${sessionId}`);
 
     eventSource.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data);
-        console.log("SSE: Received event:", event);
         onEventRef.current(event);
       } catch (error) {
-        console.error("Failed to parse SSE event:", error);
+        console.error("[SSE] Failed to parse event:", error);
       }
     };
 
     eventSource.onerror = (error) => {
-      console.error("SSE error:", error);
+      // Connection closed (normal when build completes)
       eventSource.close();
     };
 
     eventSource.onopen = () => {
-      console.log("SSE: Connection opened for session:", sessionId);
+      // Connection opened
     };
 
     return () => {
-      console.log("SSE: Closing connection for session:", sessionId);
       eventSource.close();
     };
   }, [sessionId]);

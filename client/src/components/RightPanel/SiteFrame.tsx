@@ -33,15 +33,42 @@ function SiteFrame({ sessionId, isReady = false }: SiteFrameProps) {
     );
   }
 
+  if (hasError) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-50">
+        <div className="text-center p-8">
+          <p className="text-red-600 text-lg font-semibold mb-2">
+            Failed to load the landing page
+          </p>
+          <p className="text-gray-600 text-sm">
+            The generated page could not be displayed.
+          </p>
+          <button
+            onClick={() => {
+              setHasError(false);
+              window.location.reload();
+            }}
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <iframe
-      src={`/api/result/${sessionId}`}
-      className="w-full h-full border-0"
-      title="Generated Landing Page"
-      loading="lazy"
-      onError={() => setHasError(true)}
-      onLoad={() => setHasError(false)}
-    />
+    <div className="w-full h-full bg-white">
+      <iframe
+        src={`/api/result/${sessionId}`}
+        className="w-full h-full border-0"
+        title="Generated Landing Page"
+        loading="eager"
+        style={{ minHeight: "100%" }}
+        onError={() => setHasError(true)}
+        onLoad={() => setHasError(false)}
+      />
+    </div>
   );
 }
 

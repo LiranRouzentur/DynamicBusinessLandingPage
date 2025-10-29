@@ -43,6 +43,13 @@ declare namespace google {
         place_id?: string;
         name?: string;
         formatted_address?: string;
+        types?: string[];
+        geometry?: {
+          location?: {
+            lat(): number;
+            lng(): number;
+          };
+        };
       }
     }
 

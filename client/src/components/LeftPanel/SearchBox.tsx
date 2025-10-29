@@ -20,15 +20,9 @@ function SearchBox({ onPlaceSelect }: SearchBoxProps) {
 
   // Initialize Google Maps API
   useEffect(() => {
-    console.log(
-      "[SearchBox] Checking Google Maps API key:",
-      GOOGLE_MAPS_API_KEY ? "Found" : "Missing"
-    );
     if (GOOGLE_MAPS_API_KEY) {
-      console.log("[SearchBox] Initializing Google Maps...");
       initGoogleMaps(GOOGLE_MAPS_API_KEY)
         .then(() => {
-          console.log("[SearchBox] Google Maps initialized successfully");
           setIsGoogleLoaded(true);
         })
         .catch((error) => {
@@ -44,20 +38,13 @@ function SearchBox({ onPlaceSelect }: SearchBoxProps) {
   // Initialize Autocomplete when Google Maps is loaded
   useEffect(() => {
     if (!isGoogleLoaded || !inputRef.current || autocompleteRef.current) {
-      console.log(
-        "[SearchBox] Not ready - isGoogleLoaded:",
-        isGoogleLoaded,
-        "input:",
-        !!inputRef.current,
-        "autocomplete:",
-        !!autocompleteRef.current
-      );
       return;
     }
 
-    console.log("[SearchBox] Initializing Autocomplete...");
     try {
       // Create the Autocomplete instance (classic API)
+      // Note: google.maps.places.Autocomplete is deprecated but still functional
+      // Future: migrate to PlaceAutocompleteElement when needed
       const autocomplete = new window.google.maps.places.Autocomplete(
         inputRef.current,
         {
@@ -67,29 +54,17 @@ function SearchBox({ onPlaceSelect }: SearchBoxProps) {
       );
 
       autocompleteRef.current = autocomplete;
-      console.log("[SearchBox] Autocomplete created:", autocomplete);
 
       // Add event listener for when a place is selected
       autocomplete.addListener("place_changed", () => {
         const place = autocomplete.getPlace();
-        console.log("[SearchBox] Place changed event fired!");
-        console.log("[SearchBox] Place object:", place);
 
         if (place && place.place_id) {
-          console.log(
-            "[SearchBox] Calling onPlaceSelect with place_id:",
-            place.place_id
-          );
           onPlaceSelect(place.place_id);
         } else {
-          console.error(
-            "[SearchBox] Place missing or no 'place_id' property:",
-            place
-          );
+          console.error("[SearchBox] Invalid place selection");
         }
       });
-
-      console.log("[SearchBox] Added event listener for 'place_changed'");
 
       // Cleanup
       return () => {
