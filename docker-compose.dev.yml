@@ -1,0 +1,16 @@
+# /srv/src/app/docker-compose.dev.yml
+services:
+  frontend:
+    build:
+      context: ./client
+      target: dev
+    image: landing-frontend-dev:latest
+    command: ["npm","run","dev","--","--host","0.0.0.0"]
+    ports:
+      - "5173:5173"                # Vite
+    environment:
+      VITE_API_BASE_URL: http://backend:8000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    # nginx volumes/health are replaced by the above; no extra cleanup needed

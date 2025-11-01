@@ -95,7 +95,7 @@ export async function validateIframeContent(html: string): Promise<ValidationRes
 function validateSecurity(doc: Document, errors: ValidationError[], warnings: ValidationError[]): void {
   // Check for target="_blank" without rel="noopener noreferrer"
   const externalLinks = doc.querySelectorAll('a[target="_blank"]');
-  externalLinks.forEach((link, index) => {
+  externalLinks.forEach((link) => {
     const rel = link.getAttribute('rel') || '';
     const relLower = rel.toLowerCase();
     if (!relLower.includes('noopener') || !relLower.includes('noreferrer')) {
@@ -103,7 +103,7 @@ function validateSecurity(doc: Document, errors: ValidationError[], warnings: Va
         id: 'TARGET_BLANK_NO_NOOPENER',
         severity: 'error',
         category: 'security',
-        message: `External link missing rel="noopener noreferrer" (found at index ${index})`,
+        message: `External link missing rel="noopener noreferrer"`,
         hint: 'Add rel="noopener noreferrer" to all links with target="_blank" to prevent tabnabbing attacks',
         where: getElementLocation(link),
         element: link
@@ -113,7 +113,7 @@ function validateSecurity(doc: Document, errors: ValidationError[], warnings: Va
 
   // Check for inline event handlers (XSS risk)
   const inlineHandlers = doc.querySelectorAll('[onclick], [onerror], [onload], [onmouseover]');
-  inlineHandlers.forEach((element, index) => {
+  inlineHandlers.forEach((element) => {
     warnings.push({
       id: 'INLINE_EVENT_HANDLER',
       severity: 'warning',
@@ -144,7 +144,7 @@ function validateSecurity(doc: Document, errors: ValidationError[], warnings: Va
 
   // Check for data: URIs in sensitive contexts
   const dataUris = doc.querySelectorAll('[src^="data:"], [href^="data:"]');
-  dataUris.forEach((element, index) => {
+  dataUris.forEach((element) => {
     warnings.push({
       id: 'DATA_URI_USAGE',
       severity: 'warning',
@@ -180,11 +180,10 @@ function validateAccessibility(doc: Document, errors: ValidationError[], warning
 
   // Check for form inputs without labels
   const inputs = doc.querySelectorAll('input:not([type="hidden"]), textarea, select');
-  inputs.forEach((input, index) => {
+  inputs.forEach((input) => {
     const id = input.getAttribute('id');
     const ariaLabel = input.getAttribute('aria-label');
     const ariaLabelledBy = input.getAttribute('aria-labelledby');
-    const placeholder = input.getAttribute('placeholder');
     
     if (!id && !ariaLabel && !ariaLabelledBy) {
       const hasLabel = id && doc.querySelector(`label[for="${id}"]`);
@@ -344,7 +343,7 @@ function validateLayout(doc: Document, errors: ValidationError[], warnings: Vali
 /**
  * Project-specific validation rules
  */
-function validateProjectSpecific(doc: Document, errors: ValidationError[], warnings: ValidationError[]): void {
+function validateProjectSpecific(doc: Document, _errors: ValidationError[], warnings: ValidationError[]): void {
   // Check for required hero section
   const hero = doc.querySelector('[class*="hero"], [id*="hero"], section:first-child');
   if (!hero) {

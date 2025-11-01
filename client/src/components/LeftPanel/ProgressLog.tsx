@@ -5,7 +5,7 @@
  * Groups events by timestamp (same second) and preserves scroll position
  */
 
-import { useEffect, useRef, useMemo } from "react";
+import { useRef, useMemo } from "react";
 import type { ProgressEvent } from "../../types/api";
 import { PHASE_CONFIG } from "../../utils/phaseConfig";
 
@@ -38,6 +38,8 @@ function ProgressLog({ events }: ProgressLogProps) {
         currentGroup.push(event);
       } else {
         const prevEvent = currentGroup[currentGroup.length - 1];
+        if (!prevEvent) continue;
+        
         const prevTime = new Date(prevEvent.ts);
         const currTime = new Date(event.ts);
         
@@ -66,7 +68,7 @@ function ProgressLog({ events }: ProgressLogProps) {
   const latestEvent = events.length > 0 ? events[0] : null;
   const phaseConfig = latestEvent
     ? PHASE_CONFIG[latestEvent.phase] || PHASE_CONFIG.IDLE
-    : null;
+    : PHASE_CONFIG.IDLE;
 
   const formatTimestamp = (ts: string | number) => {
     try {
@@ -110,6 +112,8 @@ function ProgressLog({ events }: ProgressLogProps) {
         <div ref={scrollContainerRef} className="space-y-2 overflow-y-auto flex-1 min-h-0">
           {groupedEvents.map((eventGroup, groupIndex) => {
             const primaryEvent = eventGroup[0];
+            if (!primaryEvent) return null;
+            
             const isError = primaryEvent.phase === "ERROR";
             const groupKey = `group-${groupIndex}-${primaryEvent.ts}`;
 

@@ -106,7 +106,7 @@ function SiteFrame() {
             }));
 
             // Send to MCP validator_errors
-            const fixResult = await sendErrorsToMCP(html, mcpErrors, sessionId);
+            const fixResult = await sendErrorsToMCP(html, mcpErrors, sessionId || '');
 
             if (cancelled) return;
 

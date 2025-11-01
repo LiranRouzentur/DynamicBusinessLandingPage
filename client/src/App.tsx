@@ -79,9 +79,9 @@ function App() {
         clearTimeout(timeout);
         resizeObserver.disconnect();
       };
+    } else {
+      setCardHeight(null);
     }
-    
-    setCardHeight(null);
   }, [hasSelectedPlace]);
 
   const handlePlaceSelect = useCallback(async (placeId: string) => {
