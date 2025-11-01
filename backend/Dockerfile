@@ -1,5 +1,5 @@
 # ============================================================================
-# MCP Dockerfile - Model Context Protocol Server
+# Backend Dockerfile - FastAPI
 # ============================================================================
 
 FROM python:3.10-slim
@@ -19,23 +19,23 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app ./app
-COPY tools ./tools
-COPY policies ./policies
+COPY landing_api ./landing_api
+COPY assets ./assets
 
-# Create storage directories
-RUN mkdir -p /app/storage/workspace /app/storage/cache
+# Create directories for artifacts and logs
+RUN mkdir -p /app/artifacts /app/logs
 
 # Set Python path
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
 # Expose port
-EXPOSE 8003
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8003/health || exit 1
+  CMD curl -f http://localhost:8000/health || exit 1
 
 # Run with uvicorn
-CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8003", "--workers", "2"]
+CMD ["uvicorn", "landing_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+

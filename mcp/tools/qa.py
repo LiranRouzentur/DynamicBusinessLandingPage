@@ -39,6 +39,13 @@ class QA:
         start = time.time()
         memoized = False
         
+        # SPDX-License-Identifier: Proprietary
+        # Copyright © 2025 Liran Rouzentur. All rights reserved.
+        # כל הזכויות שמורות © 2025 לירן רויזנטור.
+        # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+        # © 2025 Лиран Ройзентур. Все права защищены.
+        # Этот программный код является собственностью владельца.
+        # Запрещается копирование, изменение, распространение или использование без явного разрешения.
         # Compute tree hash for memoization
         tree_hash_result = self.util.hash_dir({})
         tree_hash = tree_hash_result.get("tree_hash", "")

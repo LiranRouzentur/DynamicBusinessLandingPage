@@ -111,7 +111,13 @@ class BaseAgent:
         # - Built-in tools: web_search, code_interpreter, file_search, image_generation
         # - Custom function calling: For structured JSON outputs
         # Reference: https://platform.openai.com/docs/api-reference/responses
-        # 
+        # SPDX-License-Identifier: Proprietary
+        # Copyright © 2025 Liran Rouzentur. All rights reserved.
+        # כל הזכויות שמורות © 2025 לירן רויזנטור.
+        # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+        # © 2025 Лиран Ройзентур. Все права защищены.
+        # Этот программный код является собственностью владельца.
+        # Запрещается копирование, изменение, распространение или использование без явного разрешения.
         # Test custom function calling first (best for structured outputs)
         # If it fails, fall back to embedded schema method
         self.supports_response_format = _check_response_format_support(client)

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Proprietary -->
+<!-- Copyright © 2025 Liran Rouzentur. All rights reserved. -->
+
 # Dynamic Business Landing Page Generator
 
 Full-stack AI-powered system that automatically generates responsive landing pages from Google Places data in under 60 seconds.
@@ -110,7 +113,6 @@ cd ..
 
 ### Recommended for Production
 
-
 **Security Headers**
 
 - X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
@@ -120,7 +122,6 @@ cd ..
 
 - Redis for multi-instance deployments
 - Session capacity limits (prevent memory exhaustion)
-
 
 ## Architecture
 

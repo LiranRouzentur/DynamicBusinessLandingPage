@@ -28,6 +28,13 @@ EMERGENCY_FALLBACK = [
 
 # Computes stable deterministic seed from place_id + primary_type for consistent design generation.
 # Same business always gets same seed → same visual design (grid, colors, typography, animations).
+# SPDX-License-Identifier: Proprietary
+# Copyright © 2025 Liran Rouzentur. All rights reserved.
+# כל הזכויות שמורות © 2025 לירן רויזנטור.
+# קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+# © 2025 Лиран Ройзентур. Все права защищены.
+# Этот программный код является собственностью владельца.
+# Запрещается копирование, изменение, распространение или использование без явного разрешения.
 def design_seed(google_data: Dict[str, Any]) -> int:
     """
     Compute a stable design seed from business identifiers.

@@ -35,6 +35,13 @@ class OrchestratorAgent(BaseAgent):
     
     # Initializes orchestrator with OpenAI client and creates mapper + generator agent instances.
     # Temperature=0.3 for deterministic orchestration decisions; loads API key from environment.
+    # SPDX-License-Identifier: Proprietary
+    # Copyright © 2025 Liran Rouzentur. All rights reserved.
+    # כל הזכויות שמורות © 2025 לירן רויזנטור.
+    # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+    # © 2025 Лиран Ройзентур. Все права защищены.
+    # Этот программный код является собственностью владельца.
+    # Запрещается копирование, изменение, распространение или использование без явного разрешения.
     def __init__(
         self,
         api_key: Optional[str] = None,

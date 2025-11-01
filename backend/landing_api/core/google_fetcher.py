@@ -202,6 +202,13 @@ class GoogleFetcher:
     
     # Fetches complete place data from Google Places API v1 with photos, reviews, hours, ratings.
     # Returns normalized dict with business_summary fields; handles name extraction bugs (displayName vs name).
+    # SPDX-License-Identifier: Proprietary
+    # Copyright © 2025 Liran Rouzentur. All rights reserved.
+    # כל הזכויות שמורות © 2025 לירן רויזנטור.
+    # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+    # © 2025 Лиран Ройзентур. Все права защищены.
+    # Этот программный код является собственностью владельца.
+    # Запрещается копирование, изменение, распространение или использование без явного разрешения.
     async def fetch_place(self, place_id: str) -> Dict[str, Any]:
         """
         Fetch complete place data from Google Places API v1.
