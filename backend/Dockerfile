@@ -1,41 +1,20 @@
-# ============================================================================
-# Backend Dockerfile - FastAPI
-# ============================================================================
-
-FROM python:3.10-slim
-
+FROM python:3.12-slim AS base
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY landing_api ./landing_api
-COPY assets ./assets
-
-# Create directories for artifacts and logs
-RUN mkdir -p /app/artifacts /app/logs
-
-# Set Python path
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
-# Expose port
+# dev target
+FROM base AS dev
 EXPOSE 8000
+ENV ENVIRONMENT=development
+CMD ["uvicorn","landing_api.main:app","--host","0.0.0.0","--port","8000","--reload"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-# Run with uvicorn
-CMD ["uvicorn", "landing_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
-
+# prod target
+FROM base AS prod
+EXPOSE 8000
+ENV ENVIRONMENT=production
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 CMD curl -fsS http://localhost:8000/health || exit 1
+CMD ["uvicorn","landing_api.main:app","--host","0.0.0.0","--port","8000","--workers","2"]

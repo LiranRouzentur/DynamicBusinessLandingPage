@@ -327,7 +327,7 @@ AGENTS_DEBUG_FILES=false            # Save request/response JSON
 BACKEND_URL=http://localhost:8000
 AGENTS_URL=http://localhost:8002
 MCP_BASE_URL=http://localhost:8003
-VITE_API_BASE_URL=http://localhost:8000  # Client API endpoint
+API_BASE_URL=http://localhost:8000  # Client API endpoint
 ```
 
 ## AI Integration

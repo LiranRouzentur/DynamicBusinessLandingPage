@@ -1,45 +1,33 @@
-# ============================================================================
-# Frontend Dockerfile - React + Vite + Nginx
-# Multi-stage build for optimized production image
-# ============================================================================
-
-# Stage 1: Build React app
-FROM node:18-alpine AS builder
-
+# --- deps cache
+FROM node:20-alpine AS deps
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy source code
+# --- build (prod)
+FROM deps AS build
+# Vite convention: env must start with VITE_
+ARG API_BASE_URL=/
+ENV API_BASE_URL=$API_BASE_URL
 COPY . .
-
-# Build argument for API URL
-ARG VITE_API_BASE_URL
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-
-# Build the app
 RUN npm run build
 
-# Stage 2: Serve with Nginx
-FROM nginx:1.25-alpine
+# --- dev (hot reload)
+FROM deps AS dev
+ENV NODE_ENV=development
+COPY . .
+EXPOSE 5173
+CMD ["npm","run","dev","--","--host","0.0.0.0"]
 
-# Copy built assets from builder
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Expose port 80
+# --- prod (nginx)
+FROM nginx:1.25-alpine AS prod
+# SPA nginx
+RUN printf 'server { \
+  listen 80; server_name _; \
+  root /usr/share/nginx/html; index index.html; \
+  location / { try_files $uri /index.html; } \
+  location /health { return 200 "ok\n"; } \
+}\n' > /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
-
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
-
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD wget -qO- http://localhost/health || exit 1

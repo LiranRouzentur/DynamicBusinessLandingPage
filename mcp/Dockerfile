@@ -1,41 +1,18 @@
-# ============================================================================
-# MCP Dockerfile - Model Context Protocol Server
-# ============================================================================
-
-FROM python:3.10-slim
-
+FROM python:3.12-slim AS base
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY app ./app
-COPY tools ./tools
-COPY policies ./policies
-
-# Create storage directories
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 RUN mkdir -p /app/storage/workspace /app/storage/cache
+VOLUME ["/app/storage"]
 
-# Set Python path
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
-# Expose port
+FROM base AS dev
 EXPOSE 8003
+CMD ["uvicorn","app.server:app","--host","0.0.0.0","--port","8003","--reload"]
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8003/health || exit 1
-
-# Run with uvicorn
-CMD ["uvicorn", "app.server:app", "--host", "0.0.0.0", "--port", "8003", "--workers", "2"]
+FROM base AS prod
+EXPOSE 8003
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 CMD curl -fsS http://localhost:8003/health || exit 1
+CMD ["uvicorn","app.server:app","--host","0.0.0.0","--port","8003","--workers","2"]
