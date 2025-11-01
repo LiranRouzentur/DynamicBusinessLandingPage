@@ -1,43 +1,150 @@
-# ./docker-compose.yml (local base)
+version: "3.8"
+
+networks:
+  public:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
 services:
+  # ============================================================================
+  # Frontend - React + Vite + Nginx
+  # ============================================================================
   frontend:
     build:
       context: ./client
-      target: dev
-    ports: ["5173:5173"]
+      dockerfile: Dockerfile
+      args:
+        - API_BASE_URL=http://backend:8000
+    image: landing-page-frontend:latest
+    container_name: landing-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    networks:
+      - public
+      - internal
     environment:
-      # dev: Vite talks directly to backend local port
-      API_BASE_URL: http://backend:8000
-    volumes:
-      - ./client:/app
+      - NODE_ENV=production
+    env_file:
+      - /srv/app/.env
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+  # ============================================================================
+  # Backend - FastAPI
+  # ============================================================================
   backend:
     build:
       context: ./backend
-      target: dev
-    ports: ["8000:8000"]
+      dockerfile: Dockerfile
+    image: landing-page-backend:latest
+    container_name: landing-backend
+    restart: always
+    expose:
+      - "8000"
+    networks:
+      - internal
     environment:
-      ENVIRONMENT: development
-      AGENTS_BASE_URL: http://agents:8002
-      MCP_BASE_URL: http://mcp:8003
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - AGENTS_URL=http://agents:8002
+      - MCP_BASE_URL=http://mcp:8003
+    env_file:
+      - /srv/app/.env
     volumes:
-      - ./backend:/app
+      - ./backend/artifacts:/app/artifacts
+      - ./backend/logs:/app/logs
+    depends_on:
+      agents:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: uvicorn landing_api.main:app --host 0.0.0.0 --port 8000 --workers 2
 
+  # ============================================================================
+  # Agents - Python OpenAI Agents Service
+  # ============================================================================
   agents:
     build:
       context: ./agents
-      target: dev
-    ports: ["8002:8002"]
+      dockerfile: Dockerfile
+    image: landing-page-agents:latest
+    container_name: landing-agents
+    restart: always
+    expose:
+      - "8002"
+    networks:
+      - internal
     environment:
-      USE_RESPONSES_API: "true"
-      AGENTS_DEBUG_FILES: "true"
+      - PYTHONUNBUFFERED=1
+      - BACKEND_URL=http://backend:8000
+      - MCP_BASE_URL=http://mcp:8003
+      - USE_RESPONSES_API=true
+      - AGENTS_DEBUG_FILES=false
+    env_file:
+      - /srv/app/.env
     volumes:
-      - ./agents:/app
+      - ./backend/artifacts:/app/artifacts
+    depends_on:
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers 2
 
+  # ============================================================================
+  # MCP - Model Context Protocol Server
+  # ============================================================================
   mcp:
     build:
       context: ./mcp
-      target: dev
-    ports: ["8003:8003"]
+      dockerfile: Dockerfile
+    image: landing-page-mcp:latest
+    container_name: landing-mcp
+    restart: always
+    expose:
+      - "8003"
+    networks:
+      - internal
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8003
+      - WORKSPACE_ROOT=/app/storage/workspace
+      - CACHE_ROOT=/app/storage/cache
+    env_file:
+      - /srv/app/.env
     volumes:
-      - ./mcp:/app
+      - mcp-storage:/app/storage
+      - ./mcp/policies:/app/policies:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: uvicorn app.server:app --host 0.0.0.0 --port 8003 --workers 2
+
+volumes:
+  mcp-storage:
+    driver: local

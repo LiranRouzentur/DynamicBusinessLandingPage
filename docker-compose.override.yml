@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 networks:
   public:
@@ -9,14 +9,14 @@ networks:
 
 services:
   # ============================================================================
-  # Frontend - React + Vite + Nginx
+  # Frontend - React + Vite build + Nginx serve
   # ============================================================================
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - API_BASE_URL=http://backend:8000
+        VITE_API_BASE_URL: "http://backend:8000"
     image: landing-page-frontend:latest
     container_name: landing-frontend
     restart: always
@@ -25,14 +25,12 @@ services:
     networks:
       - public
       - internal
-    environment:
-      - NODE_ENV=production
     env_file:
       - /srv/app/.env
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -53,12 +51,12 @@ services:
     networks:
       - internal
     environment:
-      - PYTHONUNBUFFERED=1
-      - ENVIRONMENT=production
-      - BACKEND_HOST=0.0.0.0
-      - BACKEND_PORT=8000
-      - AGENTS_URL=http://agents:8002
-      - MCP_BASE_URL=http://mcp:8003
+      PYTHONUNBUFFERED: "1"
+      ENVIRONMENT: "production"
+      BACKEND_HOST: "0.0.0.0"
+      BACKEND_PORT: "8000"
+      AGENTS_URL: "http://agents:8002"
+      MCP_BASE_URL: "http://mcp:8003"
     env_file:
       - /srv/app/.env
     volumes:
@@ -92,11 +90,11 @@ services:
     networks:
       - internal
     environment:
-      - PYTHONUNBUFFERED=1
-      - BACKEND_URL=http://backend:8000
-      - MCP_BASE_URL=http://mcp:8003
-      - USE_RESPONSES_API=true
-      - AGENTS_DEBUG_FILES=false
+      PYTHONUNBUFFERED: "1"
+      BACKEND_URL: "http://backend:8000"
+      MCP_BASE_URL: "http://mcp:8003"
+      USE_RESPONSES_API: "true"
+      AGENTS_DEBUG_FILES: "false"
     env_file:
       - /srv/app/.env
     volumes:
@@ -127,11 +125,11 @@ services:
     networks:
       - internal
     environment:
-      - PYTHONUNBUFFERED=1
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=8003
-      - WORKSPACE_ROOT=/app/storage/workspace
-      - CACHE_ROOT=/app/storage/cache
+      PYTHONUNBUFFERED: "1"
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8003"
+      WORKSPACE_ROOT: "/app/storage/workspace"
+      CACHE_ROOT: "/app/storage/cache"
     env_file:
       - /srv/app/.env
     volumes:
