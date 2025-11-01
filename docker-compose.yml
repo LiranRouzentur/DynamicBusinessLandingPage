@@ -1,120 +1,43 @@
-version: '3.8'
-
+# ./docker-compose.yml (local base)
 services:
-  # MCP Server - FastMCP + Starlette/Uvicorn
-  mcp:
-    build:
-      context: ./mcp
-      dockerfile: Dockerfile
-    container_name: landing-mcp
-    ports:
-      - "8003:8003"
-    environment:
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=8003
-      - WORKSPACE_ROOT=/app/storage/workspace
-      - CACHE_ROOT=/app/storage/cache
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - mcp_workspace:/app/storage/workspace
-      - mcp_cache:/app/storage/cache
-      - ./mcp/policies:/app/policies:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - landing-network
-    restart: unless-stopped
-
-  # Agents Service - AI Orchestration
-  agents:
-    build:
-      context: ./agents
-      dockerfile: Dockerfile
-    container_name: landing-agents
-    ports:
-      - "8001:8001"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MCP_BASE_URL=http://mcp:8003
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./agents/app:/app/app:ro
-      - agents_logs:/app/logs
-    depends_on:
-      mcp:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    networks:
-      - landing-network
-    restart: unless-stopped
-
-  # Backend Service - API Gateway
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: landing-backend
-    ports:
-      - "8000:8000"
-    environment:
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-      - AGENTS_SERVICE_URL=http://agents:8001
-      - FRONTEND_URL=http://localhost:5173
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./backend/landing_api:/app/landing_api:ro
-      - backend_artifacts:/app/artifacts
-      - backend_logs:/app/logs
-    depends_on:
-      agents:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-    networks:
-      - landing-network
-    restart: unless-stopped
-
-  # Frontend Service - React UI
   frontend:
     build:
       context: ./client
-      dockerfile: Dockerfile
-    container_name: landing-frontend
-    ports:
-      - "5173:5173"
+      target: dev
+    ports: ["5173:5173"]
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000
-      - NODE_ENV=development
+      # dev: Vite talks directly to backend local port
+      API_BASE_URL: http://localhost:8000
     volumes:
-      - ./client/src:/app/src:ro
-      - ./client/public:/app/public:ro
-    depends_on:
-      - backend
-    networks:
-      - landing-network
-    restart: unless-stopped
+      - ./client:/app
 
-networks:
-  landing-network:
-    driver: bridge
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    ports: ["8000:8000"]
+    environment:
+      ENVIRONMENT: development
+      AGENTS_BASE_URL: http://agents:8002
+      MCP_BASE_URL: http://mcp:8003
+    volumes:
+      - ./backend:/app
 
-volumes:
-  mcp_workspace:
-  mcp_cache:
-  agents_logs:
-  backend_artifacts:
-  backend_logs:
+  agents:
+    build:
+      context: ./agents
+      target: dev
+    ports: ["8002:8002"]
+    environment:
+      USE_RESPONSES_API: "true"
+      AGENTS_DEBUG_FILES: "true"
+    volumes:
+      - ./agents:/app
 
+  mcp:
+    build:
+      context: ./mcp
+      target: dev
+    ports: ["8003:8003"]
+    volumes:
+      - ./mcp:/app

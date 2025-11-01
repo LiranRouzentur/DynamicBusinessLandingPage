@@ -1,8 +1,10 @@
 import json
 import time
-import sys
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 class Bundle:
     def __init__(self, root, util, csp, adaptive_manager=None):
@@ -21,11 +23,18 @@ class Bundle:
             "result": "ERROR" if error else "OK",
             "error": error
         }
-        print(json.dumps(telemetry), file=sys.stderr)
+        logger.info(json.dumps(telemetry))
 
     def write_files(self, params: Dict[str, Any]):
         start = time.time()
         
+        # SPDX-License-Identifier: Proprietary
+        # Copyright © 2025 Liran Rouzentur. All rights reserved.
+        # כל הזכויות שמורות © 2025 לירן רויזנטור.
+        # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+        # © 2025 Лиран Ройзентур. Все права защищены.
+        # Этот программный код является собственностью владельца.
+        # Запрещается копирование, изменение, распространение или использование без явного разрешения.
         try:
             written = [self.util.write_utf8(f["path"], f["content"]) for f in params["files"]]
             

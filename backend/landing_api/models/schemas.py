@@ -1,7 +1,8 @@
 """API request/response schemas"""
 
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
+import re
 
 
 class RenderPrefs(BaseModel):
@@ -18,6 +19,41 @@ class BuildRequest(BaseModel):
     """POST /api/build request"""
     place_id: str = Field(..., description="Google Maps place_id")
     render_prefs: Optional[RenderPrefs] = None
+    
+    @validator('place_id')
+    def validate_place_id(cls, v):
+        """
+        Validate place_id format to prevent injection attacks.
+        
+        Google Place IDs follow specific formats:
+        - Legacy format: ChIJ... or ChIX... (27+ chars)
+        - New API format: places/... (variable length)
+        """
+        if not v or not isinstance(v, str):
+            raise ValueError("place_id must be a non-empty string")
+        
+        v = v.strip()
+        
+        # Check valid prefixes
+        if not (v.startswith('ChI') or v.startswith('places/')):
+            raise ValueError(
+                "Invalid place_id format. Must start with 'ChI' (legacy) or 'places/' (new API)"
+            )
+        
+        # Length validation (Place IDs are typically 10-200 chars)
+        if len(v) < 10 or len(v) > 200:
+            raise ValueError(
+                f"Invalid place_id length: {len(v)} chars. Expected 10-200 chars."
+            )
+        
+        # Character whitelist: alphanumeric + underscore + hyphen + forward slash only
+        # This prevents XSS, SQL injection, and path traversal attempts
+        if not re.match(r'^[a-zA-Z0-9_\-\/]+$', v):
+            raise ValueError(
+                "place_id contains invalid characters. Only alphanumeric, underscore, hyphen, and forward slash allowed."
+            )
+        
+        return v
 
 
 class BuildResponse(BaseModel):

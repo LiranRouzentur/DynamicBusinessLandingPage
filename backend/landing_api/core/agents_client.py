@@ -11,12 +11,31 @@ logger = logging.getLogger(__name__)
 class AgentsServiceClient:
     """Client to communicate with the agents service"""
     
+    # Initializes HTTP client for agents service (port 8002) with 5-minute timeout.
+    # Manages persistent connection for efficiency; use_new_agents flag for A/B testing.
     def __init__(self, use_new_agents: bool = True):
         # New agents service runs on port 8002, old on 8001
         self.base_url = "http://localhost:8002" if use_new_agents else "http://localhost:8001"
         self.use_new_agents = use_new_agents
         self.timeout = 300.0  # 5 minutes timeout
+        self._client: Optional[httpx.AsyncClient] = None
     
+# Gets or creates persistent async HTTP client with configured timeout.
+# Reuses connection across requests for better performance.
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create persistent HTTP client"""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+    
+    async def close(self):
+        """Close HTTP client"""
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+    
+    # Calls agents service POST /build with place_data and preferences; returns {success, bundle, error}.
+    # Handles timeouts gracefully with user-friendly messages; returns None if connection fails.
     async def build(
         self,
         session_id: str,
@@ -24,8 +43,7 @@ class AgentsServiceClient:
         category: str,
         place_data: Dict[str, Any],
         render_prefs: Dict[str, Any],
-        data_richness: Dict[str, bool],
-        stop_after: Optional[str] = None  # "mapper", "generator", or "validator" for testing
+        data_richness: Dict[str, bool]
     ) -> Optional[Dict[str, Any]]:
         """
         Call the agents service to build a landing page
@@ -41,94 +59,61 @@ class AgentsServiceClient:
         Returns:
             Build result dict or None if failed
         """
-        # Create fresh client for each request to avoid event loop issues
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                payload = {
-                    "session_id": session_id,
-                    "business_name": business_name,
-                    "category": category,
-                    "place_data": place_data,
-                    "render_prefs": render_prefs,
-                    "data_richness": data_richness
-                }
-                
-                # Add stop_after if provided (for testing)
-                if stop_after:
-                    payload["stop_after"] = stop_after
-                
+            client = await self._get_client()
+            payload = {
+                "session_id": session_id,
+                "business_name": business_name,
+                "category": category,
+                "place_data": place_data,
+                "render_prefs": render_prefs,
+                "data_richness": data_richness
+            }
+            
+            logger.info(
+                f"[AGENTS_CLIENT] Sending POST to {self.base_url}/build | "
+                f"session_id={session_id} | "
+                f"timeout={self.timeout}s"
+            )
+            
+            response = await client.post(
+                f"{self.base_url}/build",
+                json=payload
+            )
+            
+            logger.info(
+                f"[AGENTS_CLIENT] Received response | "
+                f"status={response.status_code} | "
+                f"session_id={session_id} | "
+                f"headers={dict(response.headers)}"
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
                 logger.info(
-                    f"[AGENTS_CLIENT] Sending POST to {self.base_url}/build | "
-                    f"session_id={session_id} | "
-                    f"timeout={self.timeout}s"
+                    f"[AGENTS_CLIENT] Response parsed | "
+                    f"success={result.get('success')} | "
+                    f"has_bundle={bool(result.get('bundle'))} | "
+                    f"session_id={session_id}"
                 )
                 
-                response = await client.post(
-                    f"{self.base_url}/build",
-                    json=payload
-                )
-                
-                logger.info(
-                    f"[AGENTS_CLIENT] Received response | "
-                    f"status={response.status_code} | "
-                    f"session_id={session_id} | "
-                    f"headers={dict(response.headers)}"
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(
-                        f"[AGENTS_CLIENT] Response parsed | "
-                        f"success={result.get('success')} | "
-                        f"has_bundle={bool(result.get('bundle'))} | "
-                        f"session_id={session_id}"
-                    )
-                    
-                    if not result.get("success"):
-                        error_detail = result.get("error", "Unknown error")
-                        logger.error(f"Build failed: {error_detail}")
-                        return {"success": False, "error": error_detail}
-                    
-                    # Convert agent service bundle format to backend format
-                    if result.get("bundle"):
-                        bundle = result["bundle"]
-                        
-                        # Check if single-file HTML mode (html field exists)
-                        if "html" in bundle:
-                            # Single-file mode - pass through as-is
-                            normalized = {"html": bundle["html"]}
-                            if "meta" in bundle:
-                                normalized["meta"] = bundle["meta"]
-                        else:
-                            # Multi-file mode - normalize key names
-                            normalized = {}
-                            if "index_html" in bundle:
-                                normalized["index_html"] = bundle["index_html"]
-                            elif "index.html" in bundle:
-                                normalized["index_html"] = bundle["index.html"]
-                            
-                            if "styles_css" in bundle:
-                                normalized["styles_css"] = bundle["styles_css"]
-                            elif "styles.css" in bundle:
-                                normalized["styles_css"] = bundle["styles.css"]
-                            
-                            if "app_js" in bundle:
-                                normalized["app_js"] = bundle["app_js"]
-                            elif "app.js" in bundle:
-                                normalized["app_js"] = bundle["app.js"]
-                        
-                        result["bundle"] = normalized
-                    
-                    return result
-                else:
-                    # Try to extract error detail from response
-                    try:
-                        error_detail = response.json().get("detail", "Unknown error")
-                        logger.error(f"Build failed: {response.status_code} - {error_detail}")
-                    except:
-                        error_detail = f"HTTP {response.status_code}"
-                        logger.error(f"Build failed: {response.status_code}")
+                if not result.get("success"):
+                    error_detail = result.get("error", "Unknown error")
+                    logger.error(f"Build failed: {error_detail}")
                     return {"success": False, "error": error_detail}
+                
+                # Agent service returns single-file HTML in bundle["html"]
+                # Pass through as-is (no normalization needed)
+                return result
+            else:
+                # Try to extract error detail from response
+                try:
+                    error_detail = response.json().get("detail", "Unknown error")
+                    logger.error(f"Build failed: {response.status_code} - {error_detail}")
+                except:
+                    error_detail = f"HTTP {response.status_code}"
+                    logger.error(f"Build failed: {response.status_code}")
+                return {"success": False, "error": error_detail}
                     
         except httpx.ReadTimeout as e:
             logger.error(
@@ -151,11 +136,10 @@ class AgentsServiceClient:
     
     async def health_check(self) -> bool:
         """Check if agents service is healthy"""
-        # Create fresh client for health checks too
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/health")
-                return response.status_code == 200
+            client = await self._get_client()
+            response = await client.get(f"{self.base_url}/health")
+            return response.status_code == 200
         except Exception:
             return False
 

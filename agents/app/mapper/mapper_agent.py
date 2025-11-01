@@ -13,10 +13,14 @@ logger = logging.getLogger(__name__)
 class MapperAgent(BaseAgent):
     """Mapper agent - enriches Google Maps business data with web research"""
     
+    # Initializes mapper with OpenAI client and retry config (max 3 attempts with backoff).
+    # Extracts business summary, logo, images, colors from Google data enriched with AI reasoning.
     def __init__(self, client, model: str = "gpt-4.1", temperature: float = 0.7):
         super().__init__(client, model, temperature, agent_name="Mapper")
         self.max_retries = 3
     
+    # Runs mapper with self-healing retry loop (up to 3 attempts with exponential backoff).
+    # Uses Responses API with stateful context for token savings; validates output with Pydantic + QA checks.
     async def run(
         self,
         google_data: Dict[str, Any],

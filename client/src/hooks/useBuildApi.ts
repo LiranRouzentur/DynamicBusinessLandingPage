@@ -5,6 +5,8 @@
 
 import { useCallback, useState } from "react";
 import { useBuild } from "../contexts/BuildContext";
+import { logger } from "../utils/logger";
+import { API_KEY } from "../utils/constants";
 
 interface UseBuildApiReturn {
   startBuild: (placeId: string) => Promise<void>;
@@ -24,13 +26,23 @@ export function useBuildApi(): UseBuildApiReturn {
         return;
       }
 
+      // SPDX-License-Identifier: Proprietary
+      // Copyright © 2025 Liran Rouzentur. All rights reserved.
+      // כל הזכויות שמורות © 2025 לירן רויזנטור.
+      // קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+      // © 2025 Лиран Ройзентур. Все права защищены.
+      // Этот программный код является собственностью владельца.
+      // Запрещается копирование, изменение, распространение или использование без явного разрешения.
       setIsLoading(true);
       setError(null);
 
       try {
         const response = await fetch("/api/build", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY,
+          },
           body: JSON.stringify({ place_id: placeId }),
         });
 
@@ -45,7 +57,7 @@ export function useBuildApi(): UseBuildApiReturn {
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Failed to start build";
-        console.error("[useBuildApi] Failed to start build:", err);
+        logger.error("[useBuildApi] Failed to start build:", err);
         setError(errorMessage);
       } finally {
         setIsLoading(false);

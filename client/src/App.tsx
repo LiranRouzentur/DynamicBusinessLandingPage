@@ -82,7 +82,6 @@ function App() {
     }
     
     setCardHeight(null);
-    return undefined;
   }, [hasSelectedPlace]);
 
   const handlePlaceSelect = useCallback(async (placeId: string) => {

@@ -28,6 +28,13 @@ class HTMLFixer:
         Returns:
             Dict with fixed_html, fixes_applied, and remaining_errors
         """
+        # SPDX-License-Identifier: Proprietary
+        # Copyright © 2025 Liran Rouzentur. All rights reserved.
+        # כל הזכויות שמורות © 2025 לירן רויזנטור.
+        # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+        # © 2025 Лиран Ройзентур. Все права защищены.
+        # Этот программный код является собственностью владельца.
+        # Запрещается копирование, изменение, распространение или использование без явного разрешения.
         # Filter to only error-level issues (warnings are informative)
         critical_errors = [e for e in errors if e.get('severity') == 'error']
         

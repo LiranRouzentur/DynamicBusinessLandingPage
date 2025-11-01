@@ -17,21 +17,12 @@ from app.orchestrator.orchestrator_agent import OrchestratorAgent
 _env_path = Path(__file__).resolve().parent.parent / '.env'
 load_dotenv(_env_path)
 
-# Configure logging - console only by default, file logging optional
-log_to_file = os.getenv("LOG_TO_FILE", "false").lower() == "true"
-handlers = [logging.StreamHandler(sys.stdout)]
-
-if log_to_file:
-    log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "agents.log"
-    handlers.append(logging.FileHandler(log_file, mode='a', encoding='utf-8'))
-
+# Configure logging - console only
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True,
-    handlers=handlers
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 # Force immediate flush on all handlers for better debugging
@@ -39,13 +30,41 @@ for handler in logging.root.handlers:
     handler.flush()
 
 logger = logging.getLogger(__name__)
-if log_to_file:
-    logger.info(f"[AGENTS] Logging to file: {log_file}")
-else:
-    logger.info("[AGENTS] Logging to console only")
+logger.info("[AGENTS] Logging to console only")
 
 # Backend URL for sending events
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+# Persistent HTTP client for event sending (reuse connections)
+_http_client: Optional[httpx.AsyncClient] = None
+
+# Gets or creates persistent HTTP client for event sending with 5s timeout.
+# Reuses connections to backend /api/events endpoint for efficiency.
+def _get_http_client() -> httpx.AsyncClient:
+    """Get or create persistent HTTP client"""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=5.0)
+    return _http_client
+
+# Background event loop for async operations (created once at startup)
+_event_loop: Optional[asyncio.AbstractEventLoop] = None
+_event_thread: Optional[threading.Thread] = None
+
+# Starts background event loop in daemon thread for async event sending without blocking main thread.
+# Created once at startup, runs forever until process exit; enables fire-and-forget event emission.
+def _start_event_loop():
+    """Start background event loop for async operations"""
+    global _event_loop, _event_thread
+    if _event_loop is None:
+        _event_loop = asyncio.new_event_loop()
+        _event_thread = threading.Thread(
+            target=_event_loop.run_forever,
+            daemon=True,
+            name="event-loop"
+        )
+        _event_thread.start()
+        logger.info("✓ Background event loop started")
 
 app = FastAPI(
     title="New Agents Service",
@@ -73,77 +92,94 @@ class BuildRequest(BaseModel):
     interactivity_tier: Optional[str] = "enhanced"
     max_attempts: Optional[int] = 3  # Increased to 3 to handle edge cases
     asset_budget: Optional[int] = 3
-    stop_after: Optional[str] = None  # "mapper", "generator", or "validator" for testing
 
 
+# Startup handler: initializes background event loop for async operations.
+# Ensures event emission infrastructure is ready before accepting build requests.
+@app.on_event("startup")
+async def startup_event():
+    """Initialize background services"""
+    _start_event_loop()
+    logger.info("✓ Agents service startup complete")
+
+
+# Shutdown handler: closes HTTP client and stops background event loop gracefully.
+# Ensures proper cleanup of async resources on service termination.
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    global _http_client, _event_loop
+    
+    # Close HTTP client
+    if _http_client:
+        await _http_client.aclose()
+        _http_client = None
+    
+    # Stop event loop
+    if _event_loop:
+        _event_loop.call_soon_threadsafe(_event_loop.stop)
+        _event_loop = None
+    
+    logger.info("✓ Agents service shutdown complete")
+
+
+# Health check endpoint for monitoring and service discovery.
+# Returns 200 OK with service name; used by backend to verify agents service availability.
 @app.get("/health")
 async def health():
     """Health check"""
     return {"status": "healthy", "service": "new-agents"}
 
 
+# Sends progress event to backend /api/events endpoint via persistent HTTP client.
+# Non-blocking operation - logs warning if fails but doesn't break build; enables real-time SSE updates.
 async def _send_event_to_backend(session_id: str, phase: str, detail: str) -> None:
     """Send event to backend /api/events endpoint"""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            payload = {
-                "session_id": session_id,
-                "phase": phase,
-                "detail": detail
-            }
-            response = await client.post(
-                f"{BACKEND_URL}/api/events",
-                json=payload
-            )
-            if response.status_code != 200:
-                logger.warning(f"Failed to send event to backend: {response.status_code}")
+        client = _get_http_client()
+        payload = {
+            "session_id": session_id,
+            "phase": phase,
+            "detail": detail
+        }
+        response = await client.post(
+            f"{BACKEND_URL}/api/events",
+            json=payload
+        )
+        if response.status_code != 200:
+            logger.warning(f"Failed to send event to backend: {response.status_code}")
     except Exception as e:
         # Don't fail the build if event sending fails
         logger.debug(f"Event sending failed (non-critical): {e}")
 
 
-# Thread pool for event callbacks to prevent thread accumulation
-_event_thread_pool = None
-_event_thread_lock = threading.Lock()
-
-def _get_event_thread_pool():
-    """Get or create thread pool for event callbacks"""
-    global _event_thread_pool
-    if _event_thread_pool is None:
-        from concurrent.futures import ThreadPoolExecutor
-        _event_thread_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="event-callback")
-    return _event_thread_pool
-
+# Creates event callback closure that logs events and forwards to backend via background event loop.
+# Uses asyncio.run_coroutine_threadsafe for thread-safe async execution without blocking orchestrator.
 def _create_event_callback(session_id: str) -> Callable[[str, str], None]:
     """Create an event callback that sends events to backend"""
     def event_callback(phase: str, message: str):
         """Event callback for progress - sends to backend and logs locally"""
         logger.info(f"[{phase}] {message}")
-        # Send to backend asynchronously (fire and forget) using thread pool
-        def run_in_thread():
-            """Run async function in a new thread with its own event loop"""
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            try:
-                new_loop.run_until_complete(_send_event_to_backend(session_id, phase, message))
-            except Exception as e:
-                logger.debug(f"Event sending failed (non-critical): {e}")
-            finally:
-                new_loop.close()
         
-        # Use thread pool to prevent thread accumulation
+        # Send to backend asynchronously using persistent event loop
+        # This avoids creating new event loops and threads for each event
         try:
-            pool = _get_event_thread_pool()
-            pool.submit(run_in_thread)
+            if _event_loop and _event_loop.is_running():
+                # Submit coroutine to background event loop (fire and forget)
+                asyncio.run_coroutine_threadsafe(
+                    _send_event_to_backend(session_id, phase, message),
+                    _event_loop
+                )
+            else:
+                logger.warning("Event loop not running, event not sent")
         except Exception as e:
-            logger.warning(f"Failed to submit event callback to thread pool: {e}")
-            # Fallback to direct thread if pool fails
-        thread = threading.Thread(target=run_in_thread, daemon=True)
-        thread.start()
+            logger.debug(f"Event sending failed (non-critical): {e}")
     
     return event_callback
 
 
+# Main build endpoint: orchestrates mapper → generator → validators workflow.
+# Creates session-specific artifact directory and event callback; returns {success, html, meta}.
 @app.post("/build")
 async def build(build_request: BuildRequest):
     """
@@ -170,22 +206,8 @@ async def build(build_request: BuildRequest):
             max_attempts=build_request.max_attempts,
             asset_budget=build_request.asset_budget,
             event_callback=event_callback,
-            stop_after=build_request.stop_after,
             session_id=build_request.session_id  # Pass session_id for proper artifact storage
         )
-        
-        # Handle test mode (stop_after parameter)
-        if result.get("test_mode"):
-            return {
-                "session_id": build_request.session_id,
-                "success": True,
-                "test_mode": True,
-                "stopped_after": result.get("stopped_after"),
-                "mapper_out": result.get("mapper_out"),
-                "generator_out": result.get("generator_out"),
-                "validator_result": result.get("validator_result"),
-                "orchestration_log": result.get("orchestration_log")
-            }
         
         logger.info(
             f"[BUILD] Orchestrator completed | "
@@ -214,51 +236,13 @@ async def build(build_request: BuildRequest):
                 detail=error_msg
             )
         
-        # Read bundle files from workdir (before zipping)
-        bundle_data = {}
-        if result.get("success"):
-            # The orchestrator should return bundle content directly, but if not, try to read from expected location
-            # Check if bundle content is in the result first
-            if "bundle" in result:
-                bundle_data = result["bundle"]
-            elif result.get("bundle_path"):
-                # Fallback: try to extract from zip or read from workdir
-                bundle_path = Path(result["bundle_path"])
-                # If it's a zip, extract it; otherwise read from directory
-                if bundle_path.suffix == ".zip":
-                    import tempfile
-                    import zipfile
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        with zipfile.ZipFile(bundle_path, 'r') as zip_ref:
-                            zip_ref.extractall(tmpdir)
-                            extracted_dir = Path(tmpdir)
-                            bundle_data = {
-                                "index_html": (extracted_dir / "index.html").read_text(encoding="utf-8") if (extracted_dir / "index.html").exists() else "",
-                                "styles_css": (extracted_dir / "styles.css").read_text(encoding="utf-8") if (extracted_dir / "styles.css").exists() else "",
-                                "app_js": (extracted_dir / "script.js").read_text(encoding="utf-8") if (extracted_dir / "script.js").exists() else ""
-                            }
-                else:
-                    # Assume it's a directory
-                    workdir = bundle_path
-                    bundle_data = {
-                        "index_html": (workdir / "index.html").read_text(encoding="utf-8") if (workdir / "index.html").exists() else "",
-                        "styles_css": (workdir / "styles.css").read_text(encoding="utf-8") if (workdir / "styles.css").exists() else "",
-                        "app_js": (workdir / "script.js").read_text(encoding="utf-8") if (workdir / "script.js").exists() else ""
-                    }
-        
-        # Normalize bundle to backend format - if we have html field, use it
-        # Prioritize html field from orchestrator result
+        # Extract bundle from orchestrator result
+        # Orchestrator always returns single-file HTML in result["html"]
+        final_bundle = {}
         if result.get("html"):
-            # Single-file HTML mode - backend expects html field
             final_bundle = {"html": result["html"]}
             if "meta" in result:
                 final_bundle["meta"] = result["meta"]
-        elif bundle_data:
-            # Multi-file mode - backend expects index_html, styles_css, app_js
-            final_bundle = bundle_data
-        else:
-            # No bundle data found
-            final_bundle = {}
         
         response_data = {
             "session_id": build_request.session_id,

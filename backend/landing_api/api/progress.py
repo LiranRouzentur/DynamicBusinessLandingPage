@@ -58,24 +58,13 @@ async def stream_progress(session_id: str):
             logger.warning(f"SSE: Session {session_id} removed during stream initialization")
             return
         
-        event_log_snapshot = state_snapshot.event_log.copy()  # Shallow copy for safety
-        last_event_count = len(event_log_snapshot)
+        # Get ONLY unsent events (uses persistent tracking in BuildState)
+        unsent_events = state_snapshot.get_unsent_events()
+        logger.debug(f"SSE: Sending {len(unsent_events)} unsent events for session {session_id}")
         
-        # Track sent events to prevent duplicates - use ts+phase+detail for uniqueness
-        sent_event_keys = set()
-        
-        for event in event_log_snapshot:
-            # Create unique key for deduplication including timestamp
-            event_ts = event.get("ts", "")
-            event_key = f"{event_ts}-{event['phase']}-{event.get('detail', '').strip().lower()}"
-            
-            # Skip if we've already sent this exact event
-            if event_key in sent_event_keys:
-                logger.debug(f"SSE: Skipping duplicate event: {event.get('detail', '')[:50]}...")
-                continue
-                
-            sent_event_keys.add(event_key)
-            
+        # Send unsent events and mark them as sent
+        sent_ids = []
+        for event in unsent_events:
             e = ProgressEvent(
                 ts=event["ts"],
                 session_id=session_id,
@@ -85,6 +74,18 @@ async def stream_progress(session_id: str):
                 progress=0.0
             )
             yield f"data: {e.model_dump_json()}\n\n"
+            
+            # Track sent event ID
+            event_id = event.get("id")
+            if event_id:
+                sent_ids.append(event_id)
+        
+        # Mark events as sent in persistent state
+        if sent_ids:
+            state_snapshot.mark_events_sent(sent_ids)
+        
+        # Track position for new events
+        last_event_count = len(state_snapshot.event_log)
         
         while iteration < max_iterations:
             iteration += 1
@@ -110,24 +111,13 @@ async def stream_progress(session_id: str):
                 yield f"data: {final_event.model_dump_json()}\n\n"
                 break
             
-            # Check if new events were added (create snapshot to avoid race conditions)
-            current_event_log = current_state.event_log.copy()  # Snapshot
-            current_event_count = len(current_event_log)
-            if current_event_count > last_event_count:
-                # Send only new events
-                new_events = current_event_log[last_event_count:]
-                logger.debug(f"SSE: Sending {len(new_events)} new events for session {session_id}")
+            # Check if new events were added (use persistent unsent tracking)
+            unsent_new_events = current_state.get_unsent_events()
+            if unsent_new_events:
+                logger.debug(f"SSE: Sending {len(unsent_new_events)} new unsent events for session {session_id}")
                 
-                for event in new_events:
-                    # Deduplicate: Check if we've already sent this event (include ts for uniqueness)
-                    event_ts = event.get("ts", "")
-                    event_key = f"{event_ts}-{event['phase']}-{event.get('detail', '').strip().lower()}"
-                    if event_key in sent_event_keys:
-                        logger.debug(f"SSE: Skipping duplicate new event: {event.get('detail', '')[:50]}...")
-                        continue
-                    
-                    sent_event_keys.add(event_key)
-                    
+                sent_new_ids = []
+                for event in unsent_new_events:
                     e = ProgressEvent(
                         ts=event["ts"],
                         session_id=session_id,
@@ -137,8 +127,17 @@ async def stream_progress(session_id: str):
                         progress=0.0
                     )
                     yield f"data: {e.model_dump_json()}\n\n"
+                    
+                    # Track sent event ID
+                    event_id = event.get("id")
+                    if event_id:
+                        sent_new_ids.append(event_id)
                 
-                last_event_count = current_event_count
+                # Mark new events as sent
+                if sent_new_ids:
+                    current_state.mark_events_sent(sent_new_ids)
+                
+            last_event_count = len(current_state.event_log)
             
             await asyncio.sleep(1.0)  # Poll every 1 second
         

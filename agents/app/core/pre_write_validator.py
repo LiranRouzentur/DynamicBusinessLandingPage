@@ -29,7 +29,9 @@ from bs4 import BeautifulSoup
 import re
 
 
-def validate_generator_output_structure(gen_out: Dict[str, Any]) -> tuple[bool, list[str]]:
+# Fast deterministic pre-write validation: checks security (no inline handlers, eval), HTML parseability, CSP domains, file size.
+# Returns (is_valid, errors_list); blocks build on critical issues before file I/O; complements MCP network validation.
+def validate_generator_output_structure(gen_out: Dict[str, Any], mapper_data: Dict[str, Any] = None) -> tuple[bool, list[str]]:
     """
     Fast, deterministic validation of generator output BEFORE writing files.
     
@@ -38,9 +40,11 @@ def validate_generator_output_structure(gen_out: Dict[str, Any]) -> tuple[bool, 
     - HTML parseability (can be parsed, not malformed)
     - File size sanity (not too large)
     - Basic syntax checks (no obvious errors)
+    - CSP domain validation (images from allowed domains only)
     
     Args:
         gen_out: Generator output dict with html (single inline HTML file)
+        mapper_data: Optional mapper data containing business_page_url for dynamic CSP validation
         
     Returns:
         (is_valid, list_of_errors)
@@ -102,6 +106,86 @@ def validate_generator_output_structure(gen_out: Dict[str, Any]) -> tuple[bool, 
         if re.search(pattern, html):
             errors.append(f"SECURITY: {name} detected in JavaScript. This will cause build failure.")
             break  # Only report first occurrence
+    
+    # 2.4 Check image src URLs for CSP violations (CRITICAL - blocked images break page)
+    # Extract all image URLs from src attributes
+    img_urls = re.findall(r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
+    
+    # CSP-allowed image domains (must match the CSP in generator_prompt.py)
+    # STRICT: Only Google API images and free stock images allowed
+    allowed_domains = [
+        'googleusercontent.com',  # Matches *.googleusercontent.com (Google Places/API images)
+        'images.unsplash.com',    # Unsplash CDN
+        'images.pexels.com',      # Pexels CDN
+        'pixabay.com',            # Matches *.pixabay.com
+        'upload.wikimedia.org',   # Wikimedia Commons
+    ]
+    
+    # NOTE: Business website domains are NOT added to avoid CORS issues with logos and external assets
+    
+    # Allowed URL schemes
+    allowed_schemes = ['data:', 'blob:']
+    
+    csp_violations = []
+    for img_url in img_urls:
+        # Skip data: and blob: URIs
+        if any(img_url.startswith(scheme) for scheme in allowed_schemes):
+            continue
+        
+        # Check if URL matches any allowed domain
+        url_lower = img_url.lower()
+        if not any(domain in url_lower for domain in allowed_domains):
+            # Extract domain from URL for error message
+            domain_match = re.search(r'https?://([^/]+)', img_url)
+            blocked_domain = domain_match.group(1) if domain_match else 'unknown'
+            csp_violations.append(f"{blocked_domain} (from: {img_url[:80]}...)")
+    
+    if csp_violations:
+        # Limit to first 3 violations for readability
+        violation_list = '; '.join(csp_violations[:3])
+        errors.append(
+            f"CSP VIOLATION: Image URLs from unauthorized domains detected: {violation_list}. "
+            f"ONLY these domains are allowed: {', '.join(allowed_domains)}. "
+            f"FIX: Use ONLY the image URLs provided in mapper_data (logo_url, business_images_urls, stock_images_urls). "
+            f"Do NOT fetch images from business websites or other external domains."
+        )
+    
+    # 2.5 Check for forms (FORBIDDEN - CTA-free requirement)
+    # Check for form elements which violate the CTA-free requirement
+    has_forms = re.search(r'<form[^>]*>', html, re.IGNORECASE)
+    has_inputs = re.search(r'<input[^>]*>', html, re.IGNORECASE)
+    has_textareas = re.search(r'<textarea[^>]*>', html, re.IGNORECASE)
+    has_selects = re.search(r'<select[^>]*>', html, re.IGNORECASE)
+    
+    if has_forms or has_inputs or has_textareas or has_selects:
+        errors.append(
+            "FORBIDDEN: Forms and form fields detected. This is a CTA-free landing page. "
+            "Remove ALL <form>, <input>, <textarea>, and <select> elements. "
+            "The page must be purely informational with NO interactive forms or contact CTAs."
+        )
+    
+    # 2.6 Check CSS @import rules position (must be at top of stylesheet)
+    # Extract all <style> blocks
+    style_blocks = re.findall(r'<style[^>]*>([\s\S]*?)</style>', html, re.IGNORECASE)
+    for i, style_content in enumerate(style_blocks):
+        # Find all @import statements
+        import_matches = list(re.finditer(r'@import\s+', style_content, re.IGNORECASE))
+        if import_matches:
+            # Check if there are any non-comment, non-whitespace CSS rules before @import
+            # Find position of first @import
+            first_import_pos = import_matches[0].start()
+            # Get content before first @import
+            content_before = style_content[:first_import_pos].strip()
+            # Remove comments (/* ... */)
+            content_before = re.sub(r'/\*[\s\S]*?\*/', '', content_before).strip()
+            # Check if there's any CSS rule before @import (look for { which indicates a rule)
+            if '{' in content_before or '}' in content_before:
+                errors.append(
+                    f"CSS @import rules must be at the TOP of the <style> block (found in style block #{i+1}). "
+                    f"All @import statements must appear BEFORE any other CSS rules. "
+                    f"Move all @import url(...) statements to the very beginning of your <style> tag."
+                )
+                break  # Only report once
     
     # 3. Check file size (sanity check - prevent outrageously large file)
     max_html_size = 5 * 1024 * 1024  # 5MB (includes inline CSS/JS)

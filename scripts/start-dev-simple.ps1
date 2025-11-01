@@ -11,13 +11,8 @@ $backendPath = Join-Path $projectRoot "backend"
 $clientPath = Join-Path $projectRoot "client"
 $agentsPath = Join-Path $projectRoot "agents"
 $mcpPath = Join-Path $projectRoot "mcp"
-$logsPath = Join-Path $projectRoot "logs"
 
-# Ensure logs directory exists (services will log here automatically)
-if (-not (Test-Path $logsPath)) {
-    New-Item -ItemType Directory -Path $logsPath | Out-Null
-}
-# All services now log to console windows
+# All services log to console windows
 $venvPath = Join-Path $backendPath ".venv"
 $agentsVenvPath = Join-Path $agentsPath ".venv"
 $mcpVenvPath = Join-Path $mcpPath ".venv"

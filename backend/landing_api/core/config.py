@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     api_title: str = "Dynamic Business Landing Page API"
     api_version: str = "0.1.0"
     
+    # Security
+    api_key: str = Field(default="", env="API_KEY")
+    
+    # SPDX-License-Identifier: Proprietary
+    # Copyright © 2025 Liran Rouzentur. All rights reserved.
+    # כל הזכויות שמורות © 2025 לירן רויזנטור.
+    # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+    # © 2025 Лиран Ройзентур. Все права защищены.
+    # Этот программный код является собственностью владельца.
+    # Запрещается копирование, изменение, распространение или использование без явного разрешения.
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

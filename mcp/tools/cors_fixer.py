@@ -197,13 +197,13 @@ class CORSFixer:
         """Normalize CSP meta tag to allow common CDNs"""
         csp_meta = self.soup.find('meta', attrs={'http-equiv': re.compile('Content-Security-Policy', re.I)})
         
-        # Default CSP for generated landing pages
+        # Default CSP for generated landing pages - STRICT image sources only
         default_csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://code.jquery.com https://stackpath.bootstrapcdn.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com https://stackpath.bootstrapcdn.com; "
             "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-            "img-src 'self' data: https: http:; "
+            "img-src 'self' data: https://*.googleusercontent.com https://images.unsplash.com https://images.pexels.com https://*.pixabay.com https://upload.wikimedia.org; "
             "connect-src 'self'; "
         )
         

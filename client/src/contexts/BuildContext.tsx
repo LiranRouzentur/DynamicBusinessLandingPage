@@ -20,14 +20,15 @@ export function BuildProvider({ children }: { children: ReactNode }) {
 
   const handleSetSessionId = useCallback((id: string | null) => {
     setSessionId(id);
+    // SPDX-License-Identifier: Proprietary
+    // Copyright © 2025 Liran Rouzentur. All rights reserved.
+    // כל הזכויות שמורות © 2025 לירן רויזנטור.
+    // קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+    // © 2025 Лиран Ройзентур. Все права защищены.
+    // Этот программный код является собственностью владельца.
+    // Запрещается копирование, изменение, распространение или использование без явного разрешения.
     // Reset ready state when session changes
-    if (id !== sessionId) {
-      setIsReady(false);
-    }
-  }, [sessionId]);
-
-  const handleSetIsReady = useCallback((ready: boolean) => {
-    setIsReady(ready);
+    setIsReady(false);
   }, []);
 
   return (
@@ -36,7 +37,7 @@ export function BuildProvider({ children }: { children: ReactNode }) {
         sessionId,
         isReady,
         setSessionId: handleSetSessionId,
-        setIsReady: handleSetIsReady,
+        setIsReady,
       }}
     >
       {children}

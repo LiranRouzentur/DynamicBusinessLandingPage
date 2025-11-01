@@ -1,9 +1,10 @@
 """Build state machine"""
 
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 from datetime import datetime
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class BuildPhase(str, Enum):
 class BuildState:
     """Manages build state transitions"""
     
+    # Initializes build state machine for session; tracks phase, events, metadata, and sent event IDs.
+    # Prevents duplicate events via content tracking; terminal states (READY/ERROR) are immutable.
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.phase = BuildPhase.IDLE
@@ -34,7 +37,11 @@ class BuildState:
         self.metadata: Dict[str, Any] = {}
         self.event_log: list = []  # List of all events for the UI
         self.last_updated: Optional[datetime] = None
+        self.sent_event_ids: Set[str] = set()  # Track sent events to prevent duplicates
+        self.logged_event_content: Set[str] = set()  # Track event content to prevent duplicates
     
+    # Logs event with timestamp and unique ID; updates phase and deduplicates content.
+    # Terminal states (READY/ERROR) prevent phase changes except for error updates.
     def log_event(self, phase: BuildPhase, event: str):
         """Log a new event - adds to log and updates state"""
         # Validate input
@@ -55,28 +62,22 @@ class BuildState:
         
         now = datetime.utcnow()
         
-        # Deduplicate: Don't add if the exact same event (phase + detail) was logged recently (within 1 second)
-        # This prevents duplicate events from rapid repeated calls
-        if self.event_log and self.last_updated:
-            recent_event = self.event_log[-1]
-            # Normalize event text for comparison
-            normalized_recent = recent_event.get("detail", "").strip().lower()
-            normalized_new = event.strip().lower()
-            
-            # If same phase and detail, and within 1 second, skip (likely duplicate)
-            try:
-                time_diff = (now - self.last_updated).total_seconds()
-                if (recent_event.get("phase") == phase.value and 
-                    normalized_recent == normalized_new and
-                    time_diff < 1.0):
-                    logger.debug(f"Skipping duplicate event: {event} (phase: {phase.value})")
-                    return
-            except (TypeError, AttributeError):
-                # If time comparison fails, proceed normally (shouldn't happen but be safe)
-                pass
+        # Check for duplicate content (phase + detail combination)
+        # This prevents duplicate events from being logged
+        event_content = f"{phase.value}:{event.strip()}"
+        if event_content in self.logged_event_content:
+            logger.debug(f"Skipping duplicate event: {event[:50]}")
+            return
         
-        # Add event to log
+        # Add to logged content set
+        self.logged_event_content.add(event_content)
+        
+        # Generate unique event ID using UUID (no collisions)
+        event_id = str(uuid.uuid4())
+        
+        # Add event to log with unique ID and timestamp
         self.event_log.append({
+            "id": event_id,
             "ts": now.isoformat() + "Z",
             "phase": phase.value,
             "detail": event
@@ -97,7 +98,29 @@ class BuildState:
             return None
         return self.event_log[-1]
     
+    # Returns events not yet sent to client (tracked via sent_event_ids set).
+    # Used by SSE endpoint to stream only new events without duplicates.
+    def get_unsent_events(self) -> list:
+        """Get events that haven't been sent to the client yet"""
+        unsent = []
+        for event in self.event_log:
+            event_id = event.get("id")
+            if event_id and event_id not in self.sent_event_ids:
+                unsent.append(event)
+        return unsent
+    
+    def mark_events_sent(self, event_ids: list[str]):
+        """Mark events as sent to prevent re-sending"""
+        self.sent_event_ids.update(event_ids)
+    
     def is_terminal(self) -> bool:
         """Check if build is in terminal state"""
+        # SPDX-License-Identifier: Proprietary
+        # Copyright © 2025 Liran Rouzentur. All rights reserved.
+        # כל הזכויות שמורות © 2025 לירן רויזנטור.
+        # קוד זה הינו קנייני וסודי. אין להעתיק, לערוך, להפיץ או לעשות בו שימוש ללא אישור מפורש.
+        # © 2025 Лиран Ройзентур. Все права защищены.
+        # Этот программный код является собственностью владельца.
+        # Запрещается копирование, изменение, распространение или использование без явного разрешения.
         return self.phase in (BuildPhase.READY, BuildPhase.ERROR)
 
