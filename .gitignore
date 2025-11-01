@@ -1,8 +1,9 @@
-# Python
+# Python (bytecode cache - always regenerated)
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+**/__pycache__/
 .Python
 build/
 develop-eggs/
@@ -48,11 +49,17 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-debug.log*
 
-# Artifacts
+# Artifacts (backend generated files - always regenerated, never cached)
 artifacts/
+backend/artifacts/
 *.html
 *.css
 *.js
+
+# Agent debug files (only written when AGENTS_DEBUG_FILES=true)
+agents/app/*/request.json
+agents/app/*/*_request.json
+agents/app/*/*_response.json
 
 # Testing
 .pytest_cache/

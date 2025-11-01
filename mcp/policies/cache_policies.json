@@ -1,0 +1,7 @@
+{
+  "http_ttl_s": 43200,
+  "qa_ttl_s": 86400,
+  "max_http_cache_mb": 512,
+  "max_img_cache_mb": 1024,
+  "max_transform_cache_mb": 1024
+}

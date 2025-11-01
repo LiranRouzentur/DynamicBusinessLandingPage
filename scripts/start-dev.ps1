@@ -10,7 +10,17 @@ Write-Host ""
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $backendPath = Join-Path $projectRoot "backend"
 $clientPath = Join-Path $projectRoot "client"
-$agentsPath = Join-Path $projectRoot "ai"
+$agentsPath = Join-Path $projectRoot "agents"
+$logsPath = Join-Path $projectRoot "logs"
+
+# Ensure logs directory exists and initialize per-run logs (overwrite each run)
+if (-not (Test-Path $logsPath)) {
+    New-Item -ItemType Directory -Path $logsPath | Out-Null
+}
+$backendLog = Join-Path $logsPath "backend.log"
+$agentsLog = Join-Path $logsPath "agents.log"
+$frontendLog = Join-Path $logsPath "frontend.log"
+@($backendLog, $agentsLog, $frontendLog) | ForEach-Object { Set-Content -Path $_ -Value "" -Encoding UTF8 }
 
 # PID file to track processes for cleanup
 $pidFile = Join-Path $projectRoot ".server_pids.txt"
@@ -68,8 +78,9 @@ if (-not (Test-Path $venvPath)) {
 $backendRequirements = Join-Path $backendPath "requirements.txt"
 if (Test-Path $backendRequirements) {
     Write-Host "Installing backend dependencies from requirements.txt..." -ForegroundColor Yellow
-    & "$venvPath\Scripts\pip.exe" install --upgrade pip
-    & "$venvPath\Scripts\pip.exe" install -r $backendRequirements
+    $backendPythonExe = Join-Path $venvPath "Scripts\python.exe"
+    & $backendPythonExe -m pip install --upgrade pip 2>&1 | Out-Null
+    & $backendPythonExe -m pip install -r $backendRequirements
     Write-Host "Backend dependencies installed" -ForegroundColor Green
 } else {
     Write-Host "WARNING: backend/requirements.txt not found!" -ForegroundColor Yellow
@@ -128,21 +139,27 @@ if (-not (Test-Path $agentsVenvPath)) {
 $agentsRequirements = Join-Path $agentsPath "requirements.txt"
 if (Test-Path $agentsRequirements) {
     Write-Host "Installing agents dependencies from requirements.txt..." -ForegroundColor Yellow
-    & "$agentsVenvPath\Scripts\pip.exe" install --upgrade pip
-    & "$agentsVenvPath\Scripts\pip.exe" install -r $agentsRequirements
+    $pythonExe = Join-Path $agentsVenvPath "Scripts\python.exe"
+    & $pythonExe -m pip install --upgrade pip 2>&1 | Out-Null
+    & $pythonExe -m pip install -r $agentsRequirements
     Write-Host "Agents dependencies installed" -ForegroundColor Green
 } else {
-    Write-Host "WARNING: ai/requirements.txt not found!" -ForegroundColor Yellow
+    Write-Host "WARNING: agents/requirements.txt not found!" -ForegroundColor Yellow
 }
 
 # Start agents service in background
 Write-Host "Starting Agents Service..." -ForegroundColor Cyan
 $agentsJob = Start-Job -ScriptBlock {
     param($agentsVenvPath, $agentsPath)
-    Set-Location $agentsPath
-    $env:PYTHONPATH = $agentsPath
+    Set-Location "$agentsPath\app"
+    $env:PYTHONPATH = "$agentsPath"
     $env:PYTHONDONTWRITEBYTECODE=1
-    & "$agentsVenvPath\Scripts\python.exe" -m uvicorn agents.main:app --reload --host 127.0.0.1 --port 8002
+    $env:PYTHONUNBUFFERED='1'
+    $env:PYTHONIOENCODING='utf-8'
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+    # Service logs to C:\DynamicBusinessLandingPage\logs\agents.log automatically
+    & "$agentsVenvPath\Scripts\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8002 2>&1
 } -ArgumentList $agentsVenvPath, $agentsPath
 
 Start-Sleep -Seconds 3
@@ -153,7 +170,12 @@ $backendJob = Start-Job -ScriptBlock {
     param($venvPath, $backendPath)
     Set-Location $backendPath
     $env:PYTHONDONTWRITEBYTECODE=1
-    & "$venvPath\Scripts\python.exe" -m uvicorn landing_api.main:app --reload --host 127.0.0.1 --port 8000
+    $env:PYTHONUNBUFFERED='1'
+    $env:PYTHONIOENCODING='utf-8'
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+    # Service logs automatically via Python logging
+    & "$venvPath\Scripts\python.exe" -m uvicorn landing_api.main:app --reload --host 127.0.0.1 --port 8000 2>&1
 } -ArgumentList $venvPath, $backendPath
 
 Start-Sleep -Seconds 3
@@ -163,7 +185,9 @@ Write-Host "Starting Frontend Server..." -ForegroundColor Cyan
 $frontendJob = Start-Job -ScriptBlock {
     param($clientPath)
     Set-Location $clientPath
-    & npm run dev
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+    & npm run dev 2>&1
 } -ArgumentList $clientPath
 
 Start-Sleep -Seconds 3

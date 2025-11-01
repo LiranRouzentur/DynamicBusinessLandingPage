@@ -15,18 +15,7 @@ class AgentsServiceClient:
         # New agents service runs on port 8002, old on 8001
         self.base_url = "http://localhost:8002" if use_new_agents else "http://localhost:8001"
         self.use_new_agents = use_new_agents
-        self.timeout = 300.0  # Longer timeout for agent operations (5 minutes) - agents can take time for multiple retries
-        self._client: Optional[httpx.AsyncClient] = None
-    
-    async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client with connection pooling"""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
-            )
-            logger.info("Created new HTTP client with connection pooling")
-        return self._client
+        self.timeout = 300.0  # 5 minutes timeout
     
     async def build(
         self,
@@ -52,62 +41,104 @@ class AgentsServiceClient:
         Returns:
             Build result dict or None if failed
         """
+        # Create fresh client for each request to avoid event loop issues
         try:
-            client = await self._get_client()
-            
-            payload = {
-                "session_id": session_id,
-                "business_name": business_name,
-                "category": category,
-                "place_data": place_data,
-                "render_prefs": render_prefs,
-                "data_richness": data_richness
-            }
-            
-            # Add stop_after if provided (for testing)
-            if stop_after:
-                payload["stop_after"] = stop_after
-            
-            logger.debug(f"Sending POST to {self.base_url}/build")
-            response = await client.post(
-                f"{self.base_url}/build",
-                json=payload
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                payload = {
+                    "session_id": session_id,
+                    "business_name": business_name,
+                    "category": category,
+                    "place_data": place_data,
+                    "render_prefs": render_prefs,
+                    "data_richness": data_richness
+                }
+                
+                # Add stop_after if provided (for testing)
+                if stop_after:
+                    payload["stop_after"] = stop_after
+                
+                logger.info(
+                    f"[AGENTS_CLIENT] Sending POST to {self.base_url}/build | "
+                    f"session_id={session_id} | "
+                    f"timeout={self.timeout}s"
+                )
+                
+                response = await client.post(
+                    f"{self.base_url}/build",
+                    json=payload
+                )
+                
+                logger.info(
+                    f"[AGENTS_CLIENT] Received response | "
+                    f"status={response.status_code} | "
+                    f"session_id={session_id} | "
+                    f"headers={dict(response.headers)}"
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(
+                        f"[AGENTS_CLIENT] Response parsed | "
+                        f"success={result.get('success')} | "
+                        f"has_bundle={bool(result.get('bundle'))} | "
+                        f"session_id={session_id}"
+                    )
+                    
+                    if not result.get("success"):
+                        error_detail = result.get("error", "Unknown error")
+                        logger.error(f"Build failed: {error_detail}")
+                        return {"success": False, "error": error_detail}
+                    
+                    # Convert agent service bundle format to backend format
+                    if result.get("bundle"):
+                        bundle = result["bundle"]
+                        
+                        # Check if single-file HTML mode (html field exists)
+                        if "html" in bundle:
+                            # Single-file mode - pass through as-is
+                            normalized = {"html": bundle["html"]}
+                            if "meta" in bundle:
+                                normalized["meta"] = bundle["meta"]
+                        else:
+                            # Multi-file mode - normalize key names
+                            normalized = {}
+                            if "index_html" in bundle:
+                                normalized["index_html"] = bundle["index_html"]
+                            elif "index.html" in bundle:
+                                normalized["index_html"] = bundle["index.html"]
+                            
+                            if "styles_css" in bundle:
+                                normalized["styles_css"] = bundle["styles_css"]
+                            elif "styles.css" in bundle:
+                                normalized["styles_css"] = bundle["styles.css"]
+                            
+                            if "app_js" in bundle:
+                                normalized["app_js"] = bundle["app_js"]
+                            elif "app.js" in bundle:
+                                normalized["app_js"] = bundle["app.js"]
+                        
+                        result["bundle"] = normalized
+                    
+                    return result
+                else:
+                    # Try to extract error detail from response
+                    try:
+                        error_detail = response.json().get("detail", "Unknown error")
+                        logger.error(f"Build failed: {response.status_code} - {error_detail}")
+                    except:
+                        error_detail = f"HTTP {response.status_code}"
+                        logger.error(f"Build failed: {response.status_code}")
+                    return {"success": False, "error": error_detail}
+                    
+        except httpx.ReadTimeout as e:
+            logger.error(
+                f"[AGENTS_CLIENT] ✗ TIMEOUT | "
+                f"session_id={session_id} | "
+                f"timeout={self.timeout}s | "
+                f"error={e} | "
+                f"NOTE: Agent may have completed but response was slow to return"
             )
-            
-            logger.debug(f"Received response: status={response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                logger.debug(f"Response parsed, success={result.get('success')}")
-                
-                # Convert agent service bundle format to backend format
-                if result.get("success") and result.get("bundle"):
-                    bundle = result["bundle"]
-                    
-                    # Normalize keys
-                    normalized = {}
-                    if "index_html" in bundle:
-                        normalized["index_html"] = bundle["index_html"]
-                    elif "index.html" in bundle:
-                        normalized["index_html"] = bundle["index.html"]
-                    
-                    if "styles_css" in bundle:
-                        normalized["styles_css"] = bundle["styles_css"]
-                    elif "styles.css" in bundle:
-                        normalized["styles_css"] = bundle["styles.css"]
-                    
-                    if "app_js" in bundle:
-                        normalized["app_js"] = bundle["app_js"]
-                    elif "app.js" in bundle:
-                        normalized["app_js"] = bundle["app.js"]
-                    
-                    result["bundle"] = normalized
-                
-                return result
-            else:
-                logger.error(f"Build failed: {response.status_code}")
-                return None
-                
+            return {"success": False, "error": f"Request timed out after {int(self.timeout/60)} minutes. The AI generation is taking longer than expected. Please try again."}
         except httpx.ConnectError as e:
             logger.error(f"Cannot connect to agents service - is it running? Error: {e}")
             return None
@@ -120,19 +151,13 @@ class AgentsServiceClient:
     
     async def health_check(self) -> bool:
         """Check if agents service is healthy"""
+        # Create fresh client for health checks too
         try:
-            client = await self._get_client()
-            response = await client.get(f"{self.base_url}/health", timeout=5.0)
-            return response.status_code == 200
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.base_url}/health")
+                return response.status_code == 200
         except Exception:
             return False
-    
-    async def close(self):
-        """Close the HTTP client"""
-        if self._client:
-            await self._client.aclose()
-            logger.info("Closed HTTP client")
-            self._client = None
 
 
 # Global client instance

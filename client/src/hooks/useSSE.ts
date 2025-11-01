@@ -4,19 +4,11 @@
  */
 
 import { useEffect, useRef } from "react";
-
-interface SSEEvent {
-  ts: string;
-  session_id: string;
-  phase: string;
-  step: string;
-  detail: string;
-  progress: number;
-}
+import type { ProgressEvent } from "../types/api";
 
 export function useSSE(
   sessionId: string | null,
-  onEvent: (event: SSEEvent) => void
+  onEvent: (event: ProgressEvent) => void
 ) {
   const onEventRef = useRef(onEvent);
 
@@ -35,14 +27,29 @@ export function useSSE(
       try {
         const event = JSON.parse(e.data);
         onEventRef.current(event);
+        
+        // Check if build reached terminal state (READY or ERROR)
+        if (event.phase === "READY" || event.phase === "ERROR") {
+          console.log(`[SSE] Terminal state reached: ${event.phase}, closing connection`);
+          // Close connection after a short delay to ensure all events are processed
+          setTimeout(() => {
+            eventSource.close();
+            console.log("[SSE] Connection closed");
+          }, 1000); // 1 second delay
+        }
       } catch (error) {
         console.error("[SSE] Failed to parse event:", error);
       }
     };
 
     eventSource.onerror = (error) => {
-      // Connection closed (normal when build completes)
+      // Log error for debugging
+      console.error("[SSE] Connection error:", error);
+      // Only close if connection is actually closed (not just a temporary error)
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.log("[SSE] Connection closed by server");
       eventSource.close();
+      }
     };
 
     eventSource.onopen = () => {

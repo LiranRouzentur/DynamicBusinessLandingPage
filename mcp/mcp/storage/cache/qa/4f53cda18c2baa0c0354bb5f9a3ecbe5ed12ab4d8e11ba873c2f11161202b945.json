@@ -1,0 +1,28 @@
+{
+  "status": "FAIL",
+  "violations": [
+    {
+      "id": "STRUCTURE.MISSING_INDEX_HTML",
+      "severity": "error",
+      "where": "index.html",
+      "hint": "Create index.html",
+      "owner": "generator"
+    },
+    {
+      "id": "STRUCTURE.MISSING_ASSETS_IMAGES",
+      "severity": "error",
+      "where": "assets/images",
+      "hint": "Create assets/images dir",
+      "owner": "generator"
+    }
+  ],
+  "metrics": {
+    "tree_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "memoized": false,
+    "duration_ms": 0
+  },
+  "suggestions": {},
+  "tree_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "memoized": false,
+  "created_at": 1761848691.927782
+}

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "violations": [],
+  "metrics": {
+    "tree_hash": "4fabb8d057272794596a549a599c37a71bb12cc99a6af57a5a585f7bdfbc74ad",
+    "memoized": false,
+    "duration_ms": 79
+  },
+  "suggestions": {},
+  "tree_hash": "4fabb8d057272794596a549a599c37a71bb12cc99a6af57a5a585f7bdfbc74ad",
+  "memoized": false,
+  "created_at": 1761953344.403325
+}

@@ -1,96 +1,81 @@
 /**
- * Left Panel Component - Ref: Product.md > Section 1, lines 38-41
- *
- * Top Area (30% height): Google Maps Autocomplete
- * Bottom Area (70% height): Real-time progress log via SSE
+ * Left Panel Component - Progress log display
+ * Shows real-time build progress via SSE
  */
 
-import { useEffect, useState } from "react";
-import SearchBox from "./SearchBox";
+import { useState, useEffect, useCallback } from "react";
 import ProgressLog from "./ProgressLog";
 import { useSSE } from "../../hooks/useSSE";
+import { useBuild } from "../../contexts/BuildContext";
+import type { ProgressEvent } from "../../types/api";
 
 interface LeftPanelProps {
-  onSessionStart: (sessionId: string) => void;
-  sessionId: string | null;
-  onReady: (ready: boolean) => void;
+  placeSelected: boolean;
 }
 
-function LeftPanel({ onSessionStart, sessionId, onReady }: LeftPanelProps) {
-  const [progressEvents, setProgressEvents] = useState<any[]>([]);
+// Helper function to normalize event text for comparison
+const normalizeEventText = (text: string | undefined): string => {
+  if (!text) return "";
+  return text.trim().replace(/\s+/g, " ");
+};
 
-  // Connect to SSE when session starts
-  useSSE(sessionId, (event) => {
+// Helper function to create a unique key for an event (timestamp + phase + FULL text)
+const getEventKey = (e: ProgressEvent): string => {
+  const text = normalizeEventText(e.detail || e.step || "");
+  // Use FULL text for maximum uniqueness (no substring)
+  return `${e.session_id}-${e.ts}-${e.phase}-${text}`;
+};
+
+function LeftPanel({ placeSelected }: LeftPanelProps) {
+  const { sessionId, setIsReady } = useBuild();
+  const [progressEvents, setProgressEvents] = useState<ProgressEvent[]>([]);
+
+  // Memoize event handler to prevent unnecessary SSE reconnections
+  const handleSSEEvent = useCallback((event: ProgressEvent) => {
     setProgressEvents((prev) => {
-      const newEvents = [event, ...prev]; // Add new event at the START of the array
-      return newEvents;
+      // Normalize and check if this event already exists (deduplicate based on timestamp + normalized text)
+      const eventKey = getEventKey(event);
+      const exists = prev.some(e => getEventKey(e) === eventKey);
+      
+      if (exists) {
+        // Event already exists - don't add duplicate
+        return prev;
+      }
+      
+      // Add new event and sort by timestamp (newest first / descending order)
+      // ts is a string (ISO format), convert to number for comparison
+      const updated = [event, ...prev];
+      return updated.sort((a, b) => {
+        const aTs = new Date(a.ts).getTime();
+        const bTs = new Date(b.ts).getTime();
+        return bTs - aTs; // Descending order (newest first)
+      });
     });
 
     // Check if build is ready
     if (event.phase === "READY") {
-      onReady(true);
+      setIsReady(true);
     }
-  });
+  }, [setIsReady]);
 
-  const handlePlaceSelect = (placeId: string) => {
-    if (!placeId) {
-      alert("Error: Place ID is missing. Please try selecting again.");
-      return;
-    }
+  // Connect to SSE when session starts
+  useSSE(sessionId, handleSSEEvent);
 
-    try {
-      fetch("/api/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ place_id: placeId }),
-      })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(
-              `API request failed: ${response.status} ${response.statusText}`
-            );
-          }
-          return response.json();
-        })
-        .then((data) => {
-          onSessionStart(data.session_id);
-          setProgressEvents([]); // Reset progress log
-          onReady(false); // Reset ready state
-        })
-        .catch((error) => {
-          console.error("[LeftPanel] Failed to start build:", error);
-          alert(
-            "Failed to start building landing page. Please check console for details."
-          );
-        });
-    } catch (error) {
-      console.error("Failed to start build:", error);
-      alert(
-        "Failed to start building landing page. Please check console for details."
-      );
-    }
-  };
+  // Reset progress log and ready flag when a new session starts
+  useEffect(() => {
+    setProgressEvents([]);
+    setIsReady(false);
+  }, [sessionId, setIsReady]);
 
-  const handleTestBuild = () => {
-    console.log("[LeftPanel] Test button clicked");
-    handlePlaceSelect("ChIJN1t_tDeuEmsRUsoyG83frY4"); // Sydney Opera House for testing
-  };
+  // Only show in expanded layout
+  if (!placeSelected) {
+    return null;
+  }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top: Search Box */}
-      <div className="h-[30%] p-4 border-b border-gray-200">
-        <SearchBox onPlaceSelect={handlePlaceSelect} />
-        <button
-          onClick={handleTestBuild}
-          className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          🧪 Test Build (Force)
-        </button>
-      </div>
-
-      {/* Bottom: Progress Log */}
-      <div className="h-[70%] overflow-y-auto">
+    <div className="flex flex-col h-full animate-fade-in">
+      {/* Progress Log */}
+      <div className="flex-1 overflow-y-auto min-h-0">
         <ProgressLog events={progressEvents} />
       </div>
     </div>

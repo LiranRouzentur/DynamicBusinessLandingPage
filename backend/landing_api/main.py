@@ -3,10 +3,13 @@
 import os
 import sys
 import logging
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from landing_api.core.config import settings
-from landing_api.api import build, result, progress, events
+from landing_api.api import build, result, progress, events, mcp
 
 # Configure logging early with force=True to override any existing config
 logging.basicConfig(
@@ -45,6 +48,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Set up static assets path early
+assets_path = Path(__file__).parent.parent / "assets"
+assets_path = assets_path.resolve()  # Convert to absolute path
+
+# Define route handler for logo EARLY (before mounts) to ensure it takes precedence
+@app.get("/assets/images/logo.png")
+async def get_logo():
+    """Serve the logo image - defined early to take precedence over static mount"""
+    logo_path = assets_path / "images" / "logo.png"
+    if logo_path.exists():
+        return FileResponse(str(logo_path), media_type="image/png")
+    logger.warning(f"Logo not found at: {logo_path}")
+    raise HTTPException(status_code=404, detail="Logo not found")
 
 
 @app.on_event("startup")
@@ -95,46 +112,15 @@ app.include_router(build.router, prefix="/api", tags=["build"])
 app.include_router(result.router, prefix="/api", tags=["result"])
 app.include_router(progress.router, prefix="/sse", tags=["progress"])
 app.include_router(events.router, prefix="/api", tags=["events"])
+app.include_router(mcp.router, prefix="/api", tags=["mcp"])
 
-# Add asset serving route
-from fastapi.responses import FileResponse
-from pathlib import Path
-
-@app.get("/assets/{session_id}/{file_path:path}")
-async def serve_asset(session_id: str, file_path: str):
-    """Serve assets from the artifacts folder"""
-    from landing_api.core.config import settings
-    from fastapi import HTTPException
-    
-    asset_path = Path(settings.asset_store) / session_id / file_path
-    
-    # Security check: ensure path is within session directory
+# Mount static assets directory for other files (logo.png is handled by route handler above)
+if assets_path.exists():
     try:
-        asset_path.resolve().relative_to(Path(settings.asset_store).resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    if not asset_path.exists() or not asset_path.is_file():
-        raise HTTPException(status_code=404, detail="Asset not found")
-    
-    # Determine media type
-    media_type = "application/octet-stream"
-    if file_path.endswith(".css"):
-        media_type = "text/css"
-    elif file_path.endswith(".js"):
-        media_type = "application/javascript"
-    elif file_path.endswith((".jpg", ".jpeg")):
-        media_type = "image/jpeg"
-    elif file_path.endswith(".png"):
-        media_type = "image/png"
-    elif file_path.endswith(".webp"):
-        media_type = "image/webp"
-    
-    return FileResponse(
-        asset_path,
-        media_type=media_type,
-        headers={
-            "Cache-Control": "public, max-age=31536000, immutable" if file_path.endswith((".webp", ".jpg", ".jpeg", ".png")) else "public, max-age=3600"
-        }
-    )
+        app.mount("/assets", StaticFiles(directory=str(assets_path)), name="assets")
+        logger.info(f"Static assets mounted from: {assets_path}")
+    except Exception as e:
+        logger.error(f"Failed to mount static assets: {e}", exc_info=True)
+else:
+    logger.warning(f"Assets directory not found at: {assets_path}")
 

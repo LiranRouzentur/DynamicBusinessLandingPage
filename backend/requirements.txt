@@ -8,8 +8,8 @@ pydantic-settings==2.1.0
 # HTTP Client
 httpx==0.25.2
 
-# OpenAI SDK
-openai==1.3.8
+# OpenAI SDK (upgraded for Responses API support with tools)
+openai==2.6.1
 
 
 # Utilities

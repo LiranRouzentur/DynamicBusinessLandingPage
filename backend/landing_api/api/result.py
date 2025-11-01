@@ -30,42 +30,10 @@ async def get_result(session_id: str) -> Response:
             detail=f"Build not ready. Current phase: {state.phase}"
         )
     
-    # Load bundle from artifact store
-    bundle = artifact_store.load_bundle(session_id)
-    if not bundle:
+    # Load the HTML from artifact store (now just one field/file)
+    html = artifact_store.load_html(session_id)
+    if not html:
         raise HTTPException(status_code=404, detail="Bundle not found")
-    
-    # Check if should inline CSS/JS
-    should_inline = artifact_store.should_inline(bundle)
-    
-    # Get base URL for assets
-    base_url = f"/api/result/{session_id}"
-    assets_base = f"/assets/{session_id}"
-    
-    # Prepare HTML response
-    html = bundle["index_html"]
-    
-    if should_inline:
-        # Inline CSS and JS
-        html = html.replace("</head>", f"<style>\n{bundle['styles_css']}\n</style></head>")
-        html = html.replace("</body>", f"<script>\n{bundle['app_js']}\n</script></body>")
-    else:
-        # Update existing href/src attributes to point to correct asset paths
-        # Update CSS link href - handle any attribute order
-        html = re.sub(
-            r'(<link[^>]*href=["\'])([^"\']*styles\.css)(["\'][^>]*>)',
-            fr'\g<1>{assets_base}/styles.css\g<3>',
-            html,
-            flags=re.IGNORECASE
-        )
-        # Update JS script src
-        html = re.sub(
-            r'(<script[^>]*src=["\'])([^"\']*app\.js)(["\'][^>]*>)',
-            fr'\g<1>{assets_base}/app.js\g<3>',
-            html,
-            flags=re.IGNORECASE
-        )
-    
     return Response(
         content=html,
         media_type="text/html",

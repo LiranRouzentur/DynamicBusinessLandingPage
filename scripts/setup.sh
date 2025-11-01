@@ -32,7 +32,7 @@ echo ""
 
 # AI server setup with isolated dependencies
 echo "Setting up AI server with isolated dependencies..."
-cd ai
+cd agents
 if [ ! -d ".venv" ]; then
     echo "Creating AI server virtual environment..."
     python -m venv .venv
@@ -92,7 +92,7 @@ echo "To start backend:"
 echo "  cd backend && source .venv/bin/activate && uvicorn landing_api.main:app --reload"
 echo ""
 echo "To start AI server:"
-echo "  cd ai && source .venv/bin/activate && uvicorn agents_app.main:app --reload --port 8001"
+echo "  cd agents && source .venv/bin/activate && uvicorn app.main:app --reload --port 8002"
 echo ""
 echo "To start frontend:"
 echo "  cd client && npm run dev"

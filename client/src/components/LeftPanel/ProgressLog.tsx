@@ -1,107 +1,114 @@
 /**
  * Real-time progress log display via SSE
  * Ref: Product.md > Section 1, lines 38-41
+ * SIMPLIFIED: No typing animations, show events immediately
+ * Groups events by timestamp (same second) and preserves scroll position
  */
 
-import { useEffect, useRef } from "react";
-
-interface ProgressEvent {
-  ts: string;
-  session_id: string;
-  phase: string;
-  step: string;
-  detail: string;
-  progress: number;
-}
+import { useEffect, useRef, useMemo } from "react";
+import type { ProgressEvent } from "../../types/api";
+import { PHASE_CONFIG } from "../../utils/phaseConfig";
 
 interface ProgressLogProps {
   events: ProgressEvent[];
 }
 
-// Phase configuration with icons, colors, and labels
-const PHASE_CONFIG: Record<
-  string,
-  {
-    icon: string;
-    color: string;
-    bgColor: string;
-    textColor: string;
-    label: string;
-  }
-> = {
-  IDLE: {
-    icon: "⏸️",
-    color: "gray",
-    bgColor: "bg-gray-100",
-    textColor: "text-gray-700",
-    label: "Idle",
-  },
-  FETCHING: {
-    icon: "📥",
-    color: "blue",
-    bgColor: "bg-blue-50",
-    textColor: "text-blue-700",
-    label: "Fetching Data",
-  },
-  ORCHESTRATING: {
-    icon: "🎯",
-    color: "purple",
-    bgColor: "bg-purple-50",
-    textColor: "text-purple-700",
-    label: "Orchestrating",
-  },
-  GENERATING: {
-    icon: "⚡",
-    color: "yellow",
-    bgColor: "bg-yellow-50",
-    textColor: "text-yellow-700",
-    label: "Generating",
-  },
-  QA: {
-    icon: "✅",
-    color: "green",
-    bgColor: "bg-green-50",
-    textColor: "text-green-700",
-    label: "Quality Assurance",
-  },
-  READY: {
-    icon: "🎉",
-    color: "emerald",
-    bgColor: "bg-emerald-50",
-    textColor: "text-emerald-700",
-    label: "Ready",
-  },
-  ERROR: {
-    icon: "❌",
-    color: "red",
-    bgColor: "bg-red-50",
-    textColor: "text-red-700",
-    label: "Error",
-  },
-};
-
 function ProgressLog({ events }: ProgressLogProps) {
   const endRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevEventsLengthRef = useRef(0);
+  const userHasScrolledRef = useRef(false);
 
-  // Auto-scroll to bottom when new events arrive
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Group events by timestamp (same second) and content type
+  const groupedEvents = useMemo(() => {
+    if (events.length === 0) return [];
+
+    // Sort events by timestamp (oldest first for grouping)
+    const sorted = [...events].sort((a, b) => {
+      const aTime = new Date(a.ts).getTime();
+      const bTime = new Date(b.ts).getTime();
+      return aTime - bTime;
+    });
+
+    const groups: Array<ProgressEvent[]> = [];
+    let currentGroup: ProgressEvent[] = [];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const event = sorted[i];
+      
+      if (currentGroup.length === 0) {
+        // Start new group
+        currentGroup.push(event);
+      } else {
+        const prevEvent = currentGroup[currentGroup.length - 1];
+        const prevTime = new Date(prevEvent.ts);
+        const currTime = new Date(event.ts);
+        
+        // Group if within same second
+        const sameSecond = Math.floor(prevTime.getTime() / 1000) === Math.floor(currTime.getTime() / 1000);
+        
+        if (sameSecond) {
+          currentGroup.push(event);
+        } else {
+          // Save previous group and start new one
+          groups.push([...currentGroup]);
+          currentGroup = [event];
+        }
+      }
+    }
+
+    // Add final group
+    if (currentGroup.length > 0) {
+      groups.push(currentGroup);
+    }
+
+    // Return in reverse order (newest first for display)
+    return groups.reverse();
   }, [events]);
 
+  // Track user scroll behavior
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px threshold
+      
+      // User has scrolled if not at bottom
+      userHasScrolledRef.current = !isAtBottom;
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // DISABLED: No auto-scroll - user controls scroll position completely
+  // Auto-scroll only if user hasn't manually scrolled up and new events arrive
+  // useEffect(() => {
+  //   const container = scrollContainerRef.current;
+  //   if (!container) return;
+
+  //   // Only auto-scroll if new events arrived AND user is at bottom
+  //   if (events.length > prevEventsLengthRef.current && !userHasScrolledRef.current) {
+  //     endRef.current?.scrollIntoView({ behavior: "smooth" });
+  //   }
+
+  //   prevEventsLengthRef.current = events.length;
+  // }, [events]);
+
   const getLatestEvent = () => {
-    // Events are added to the START of the array, so the first event is the latest
     return events.length > 0 ? events[0] : null;
   };
 
   const latestEvent = getLatestEvent();
-
   const phaseConfig = latestEvent
     ? PHASE_CONFIG[latestEvent.phase] || PHASE_CONFIG.IDLE
     : null;
 
-  const formatTimestamp = (ts: string) => {
+  const formatTimestamp = (ts: string | number) => {
     try {
-      const date = new Date(ts);
+      const date = typeof ts === 'string' ? new Date(ts) : new Date(ts);
       return date.toLocaleTimeString();
     } catch {
       return "";
@@ -109,8 +116,8 @@ function ProgressLog({ events }: ProgressLogProps) {
   };
 
   return (
-    <div className="p-4 h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3">
+    <div className="p-4 h-full flex flex-col min-h-0">
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <h3 className="text-sm font-semibold text-gray-800">Build Progress</h3>
         {latestEvent && phaseConfig && (
           <div
@@ -126,7 +133,7 @@ function ProgressLog({ events }: ProgressLogProps) {
       </div>
 
       {events.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center min-h-0">
           <div className="text-center">
             <div className="text-4xl mb-2">🔍</div>
             <p className="text-gray-500 text-sm">
@@ -138,16 +145,15 @@ function ProgressLog({ events }: ProgressLogProps) {
           </div>
         </div>
       ) : (
-        <div className="space-y-2 overflow-y-auto flex-1">
-          {events.map((event, index) => {
-            const config = PHASE_CONFIG[event.phase] || PHASE_CONFIG.IDLE;
-            const isError = event.phase === "ERROR";
-            // Each event creates a new log entry
-            const eventKey = `${index}-${event.ts}`;
+        <div ref={scrollContainerRef} className="space-y-2 overflow-y-auto flex-1 min-h-0">
+          {groupedEvents.map((eventGroup, groupIndex) => {
+            const primaryEvent = eventGroup[0];
+            const isError = primaryEvent.phase === "ERROR";
+            const groupKey = `group-${groupIndex}-${primaryEvent.ts}`;
 
             return (
               <div
-                key={eventKey}
+                key={groupKey}
                 className={`text-sm p-3 rounded-lg border ${
                   isError
                     ? "border-red-200 bg-red-50"
@@ -156,27 +162,32 @@ function ProgressLog({ events }: ProgressLogProps) {
               >
                 <div className="flex items-start gap-2">
                   <span className="text-xs text-gray-400 shrink-0">
-                    {formatTimestamp(event.ts)}
+                    {formatTimestamp(primaryEvent.ts)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    {event.detail ? (
-                      <p
-                        className={`text-xs ${isError ? "text-red-700 font-medium" : "text-gray-700"}`}
+                    {eventGroup.map((event, eventIndex) => {
+                      const content = event.detail || event.step || "";
+                      const trimmedContent = content.trim().replace(/^\n+|\n+$/g, "");
+                      
+                      if (!trimmedContent) return null;
+                      
+                      return (
+                        <p
+                          key={`${event.ts}-${eventIndex}`}
+                          className={`text-xs ${isError ? "text-red-700 font-medium" : "text-gray-700"} ${
+                            eventIndex > 0 ? "mt-1" : ""
+                          }`}
                       >
-                        {event.detail}
+                          {trimmedContent}
                       </p>
-                    ) : event.step ? (
-                      <p
-                        className={`text-xs ${isError ? "text-red-700 font-medium" : "text-gray-700"}`}
-                      >
-                        {event.step}
-                      </p>
-                    ) : null}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
             );
           })}
+          <div ref={endRef} />
         </div>
       )}
     </div>

@@ -1,0 +1,27 @@
+{
+  "tiers": {
+    "default": {
+      "hero_max_kb": 400,
+      "section_max_kb": 250,
+      "thumb_max_kb": 150,
+      "total_images_max_mb": 1.5
+    },
+    "economy": {
+      "hero_max_kb": 320,
+      "section_max_kb": 200,
+      "thumb_max_kb": 120,
+      "total_images_max_mb": 1.2
+    }
+  },
+  "current_tier": "default",
+  "allowed_domains": [
+    "images.unsplash.com",
+    "unsplash.com",
+    "pexels.com",
+    "pixabay.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+    "lh3.googleusercontent.com",
+    "upload.wikimedia.org"
+  ]
+}

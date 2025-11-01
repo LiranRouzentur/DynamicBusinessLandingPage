@@ -1,0 +1,26 @@
+{
+  "defaults": {
+    "timeout_ms": 3500,
+    "retries": 2,
+    "concurrency": 4,
+    "circuit_threshold": 5,
+    "cooldown_s": 60
+  },
+  "domains": {
+    "images.unsplash.com": {
+      "timeout_ms": 3500,
+      "retries": 2,
+      "concurrency": 6
+    },
+    "pexels.com": {
+      "timeout_ms": 3500,
+      "retries": 2,
+      "concurrency": 4
+    },
+    "lh3.googleusercontent.com": {
+      "timeout_ms": 5000,
+      "retries": 3,
+      "concurrency": 4
+    }
+  }
+}

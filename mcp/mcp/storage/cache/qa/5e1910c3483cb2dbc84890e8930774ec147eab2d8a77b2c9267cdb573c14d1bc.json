@@ -1,0 +1,21 @@
+{
+  "status": "FAIL",
+  "violations": [
+    {
+      "id": "SEC.TARGET_BLANK_NO_NOOPENER",
+      "severity": "error",
+      "where": "index.html",
+      "hint": "Add rel='noopener noreferrer'",
+      "owner": "generator"
+    }
+  ],
+  "metrics": {
+    "tree_hash": "5e1910c3483cb2dbc84890e8930774ec147eab2d8a77b2c9267cdb573c14d1bc",
+    "memoized": false,
+    "duration_ms": 17
+  },
+  "suggestions": {},
+  "tree_hash": "5e1910c3483cb2dbc84890e8930774ec147eab2d8a77b2c9267cdb573c14d1bc",
+  "memoized": false,
+  "created_at": 1761848106.1588619
+}

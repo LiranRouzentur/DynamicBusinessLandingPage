@@ -1,0 +1,9 @@
+{
+  "images": ["unsplash", "pexels", "pixabay"],
+  "css_js_cdn": [
+    "cdn.jsdelivr.net",
+    "unpkg.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com"
+  ]
+}

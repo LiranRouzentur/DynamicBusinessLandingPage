@@ -52,7 +52,7 @@ def main():
     
     # Get project root
     project_root = Path(__file__).parent.parent.resolve()
-    ai_path = project_root / "ai"
+    agents_path = project_root / "agents" / "app"
     backend_path = project_root / "backend"
     
     print(f"Project root: {project_root}")
@@ -66,15 +66,14 @@ def main():
     
     results = []
     
-    # Verify agents_app
-    agents_path = ai_path / "agents_app"
+    # Verify app (agents service)
     results.append((
         verify_package(
-            "agents_app",
+            "app",
             agents_path,
-            "Agents Service Package (ai/agents_app)"
+            "Agents Service Package (agents/app)"
         ),
-        "agents_app"
+        "app"
     ))
     
     # Verify landing_api

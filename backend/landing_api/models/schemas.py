@@ -23,11 +23,10 @@ class BuildRequest(BaseModel):
 class BuildResponse(BaseModel):
     """POST /api/build response
     
-    Note: Caching is disabled in local development.
-    The 'cached' field always returns False.
+    Returns session_id for tracking build progress via SSE.
+    No caching - every request generates a fresh landing page.
     """
     session_id: str
-    cached: bool = False  # Always False in local dev (caching disabled)
 
 
 class ProgressEvent(BaseModel):

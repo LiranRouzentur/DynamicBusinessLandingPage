@@ -17,8 +17,7 @@ class Settings(BaseSettings):
     asset_store: str = Field(default="./artifacts", env="ASSET_STORE")
     inline_threshold_kb: int = Field(default=60, env="INLINE_THRESHOLD_KB")
     
-    # Cache Settings (disabled in local development)
-    cache_ttl_days: int = Field(default=14, env="CACHE_TTL_DAYS")  # Not used in local dev
+    # No caching in local development - removed cache_ttl_days
     
     # Server
     backend_host: str = Field(default="localhost", env="BACKEND_HOST")

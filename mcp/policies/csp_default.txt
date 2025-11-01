@@ -1,0 +1,10 @@
+default-src 'self';
+script-src 'self';
+style-src 'self';
+img-src 'self' data: https://images.unsplash.com https://unsplash.com https://pexels.com https://pixabay.com;
+font-src 'self' data:;
+object-src 'none';
+base-uri 'self';
+frame-ancestors 'self';
+upgrade-insecure-requests;
+

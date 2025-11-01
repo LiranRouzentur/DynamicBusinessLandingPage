@@ -11,10 +11,43 @@ import uuid
 import asyncio
 import shutil
 import logging
-import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
+
+# --- New pipeline-aligned error and fetch helpers ---
+async def _fetch_place_data(place_id: str, state) -> dict:
+    """Fetch place data from Google Places API and log progress to state."""
+    from landing_api.core.google_fetcher import google_fetcher
+    logger.info(f"[GOOGLE FETCH] Fetching place data for place_id: {place_id}")
+    state.log_event(BuildPhase.FETCHING, "Discovering your business details...")
+    try:
+        place_data = await google_fetcher.fetch_place(place_id)
+        business_name = place_data.get("name", "Business")
+        # Ensure we never show place_id - if name looks like a place_id, use fallback
+        if not business_name or business_name.startswith("places/") or business_name.startswith("ChIJ"):
+            business_name = "Business"
+        state.log_event(BuildPhase.FETCHING, f"✓ Found {business_name} — gathering all the details")
+        return place_data
+    except Exception as e:
+        _handle_error(state, e, is_application_error=isinstance(e, ApplicationError))
+        return None
+
+def _handle_error(state, error, is_application_error=False):
+    logger.error(f"Build error: {repr(error)}")
+    error_msg = ""
+    if is_application_error and hasattr(error, "message"):
+        error_msg += f"✗ {error.message}"
+        if getattr(error, "hint", None):
+            error_msg += f" {error.hint}"
+    else:
+        error_msg = "✗ An error occurred. Please try again."
+    state.log_event(BuildPhase.ERROR, error_msg)
+    state.metadata["success"] = False
+    # Compatible with ApplicationError and regular Exception
+    error_info = error.model_dump() if hasattr(error, "model_dump") else {"message": str(error), "type": type(error).__name__, "retryable": True}
+    state.metadata["error"] = error_info
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -48,162 +81,68 @@ def _calculate_data_richness(place_data: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
-def _normalize_bundle_keys(bundle: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize bundle keys from 'file.ext' to 'file_ext' format"""
-    key_mapping = {
-        "index.html": "index_html",
-        "styles.css": "styles_css",
-        "app.js": "app_js"
-    }
-    
-    for old_key, new_key in key_mapping.items():
-        if old_key in bundle and new_key not in bundle:
-            bundle[new_key] = bundle.pop(old_key)
-    
-    return bundle
-
-
-def _validate_bundle(bundle: Dict[str, Any], session_id: str) -> None:
-    """Validate bundle has all required files"""
-    required_keys = ["index_html", "styles_css", "app_js"]
-    missing_keys = [key for key in required_keys if key not in bundle]
-    
-    if missing_keys:
-        logger.error(f"Session {session_id}: Missing bundle keys: {missing_keys}")
+def _validate_html(bundle: Dict[str, Any], session_id: str) -> None:
+    """Validate the bundle contains the HTML output string."""
+    if "html" not in bundle or not isinstance(bundle["html"], str) or not bundle["html"].strip():
+        logger.error(f"Session {session_id}: Missing or empty html field")
         raise ApplicationError(
             code=ErrorCode.BUNDLE_INVALID,
-            message=f"Bundle missing required files: {', '.join(missing_keys)}",
+            message=f"Landing page output missing HTML document.",
             retryable=False,
-            hint="The generated bundle is incomplete. Please report this issue."
+            hint="The generated HTML is missing. Please report this issue."
         )
-
-
-def _handle_error(state: BuildState, error: Exception, is_application_error: bool = False) -> None:
-    """Handle errors consistently"""
-    if is_application_error:
-        # Use user-friendly messages from ApplicationError
-        error_msg = f"✗ {error.message}"
-        if error.hint:
-            error_msg += f" {error.hint}"
-    else:
-        error_msg = "✗ An error occurred. Please try again."
-    
-    state.log_event(BuildPhase.ERROR, error_msg)
-    state.metadata["success"] = False
-    state.metadata["error"] = error.model_dump() if is_application_error else {
-        "message": str(error),
-        "type": type(error).__name__,
-        "retryable": True
-    }
-
-
-async def _fetch_place_data(place_id: str, state: BuildState) -> Optional[Dict[str, Any]]:
-    """Fetch place data from Google Places API"""
-    logger.info(f"[GOOGLE FETCH] Starting fetch for place_id: {place_id}")
-    state.log_event(BuildPhase.FETCHING, "Gathering business information...")
-    
-    try:
-        place_data = await google_fetcher.fetch_place(place_id)
-        business_name = place_data.get("name") or "this business"
-        
-        # Build a user-friendly message
-        details = []
-        photos_count = len(place_data.get("photos", []))
-        reviews_count = len(place_data.get("reviews", []))
-        
-        if photos_count > 0:
-            details.append(f"{photos_count} photo{'s' if photos_count != 1 else ''}")
-        if reviews_count > 0:
-            details.append(f"{reviews_count} review{'s' if reviews_count != 1 else ''}")
-        
-        if details:
-            detail_text = ", ".join(details)
-            message = f"✓ Business information retrieved ({detail_text})"
-        else:
-            message = f"✓ Business information retrieved"
-        
-        state.log_event(BuildPhase.FETCHING, message)
-        logger.info(f"Place data fetched for {business_name}")
-        return place_data
-        
-    except ApplicationError as e:
-        _handle_error(state, e, is_application_error=True)
-        return None
-
-
-async def _call_ai_agents(
-    session_id: str,
-    place_data: Dict[str, Any],
-    render_prefs: Dict[str, Any],
-    state: BuildState
-) -> Optional[Dict[str, Any]]:
-    """Call AI agents service to generate landing page"""
-    state.log_event(BuildPhase.GENERATING, "Starting page generation...")
-    
-    data_richness = _calculate_data_richness(place_data)
-    
-    # Infer category from primary_type or types
-    category = place_data.get("primary_type", "business")
-    if not category or category == "establishment":
-        types = place_data.get("types", [])
-        category = types[0] if types else "business"
-    
-    agents_result = await agents_client.build(
-        session_id=session_id,
-        business_name=place_data.get("name", "Business"),
-        category=category,
-        place_data=place_data,
-        render_prefs=render_prefs,
-        data_richness=data_richness
-    )
-    
-    if not agents_result or not agents_result.get("success"):
-        error_msg = agents_result.get("error", "Unknown error") if agents_result else "Service unavailable"
-        logger.error(f"Agents service failed: {error_msg}")
-        raise ApplicationError(
-            code=ErrorCode.ORCHESTRATION_ERROR,
-            message=f"AI agents failed: {error_msg}",
-            retryable=True,
-            hint="The AI generation service encountered an issue. Please try again."
-        )
-    
-    logger.info("Agents service completed successfully")
-    return agents_result
-
 
 async def _process_bundle(
     session_id: str,
     bundle: Dict[str, Any],
     state: BuildState
 ) -> None:
-    """Process and save bundle artifacts"""
-    # Normalize keys
-    bundle = _normalize_bundle_keys(bundle)
-    
-    # Validate
-    _validate_bundle(bundle, session_id)
-    
-    state.log_event(BuildPhase.GENERATING, "✓ Page design completed successfully")
-    state.log_event(BuildPhase.QA, "Running final quality checks...")
-    
-    # Save artifacts
+    """Process and save inline-html bundle output"""
+    _validate_html(bundle, session_id)
+    state.log_event(BuildPhase.GENERATING, "✓ Design complete — bringing it all together")
+    state.log_event(BuildPhase.QA, "Polishing every detail for perfection...")
     try:
-        artifact_store.save_bundle(
-            session_id=session_id,
-            index_html=bundle["index_html"],
-            styles_css=bundle["styles_css"],
-            app_js=bundle["app_js"],
-            assets=bundle.get("assets")
-        )
-        state.log_event(BuildPhase.QA, "✓ All quality checks completed")
+        artifact_store.save_html(session_id=session_id, html=bundle["html"], meta=bundle.get("meta"))
+        state.log_event(BuildPhase.QA, "✓ Final touches applied")
     except Exception as e:
-        logger.error(f"Failed to save artifacts: {e}", exc_info=True)
+        logger.error(f"Failed to save html artifact: {e}", exc_info=True)
         raise ApplicationError(
             code=ErrorCode.CACHE_ERROR,
-            message=f"Failed to save artifacts: {str(e)}",
+            message=f"Failed to save landing page: {str(e)}",
             retryable=True,
             hint="Storage issue encountered. Please try again."
         )
+
+async def _call_ai_agents(session_id: str, place_data: dict, render_prefs: dict, state) -> dict:
+    """Invoke agent service to generate landing page HTML/meta. Logs progress and handles errors."""
+    try:
+        from landing_api.core.agents_client import agents_client
+        state.log_event(BuildPhase.GENERATING, "Crafting your unique design...")
+        # Calculate data richness and category
+        data_richness = _calculate_data_richness(place_data)
+        category = place_data.get("types", ["establishment"])[0] if place_data.get("types") else "establishment"
+        
+        result = await agents_client.build(
+            session_id=session_id,
+            business_name=place_data.get("name", "Business"),
+            category=category,
+            place_data=place_data,
+            render_prefs=render_prefs,
+            data_richness=data_richness,
+        )
+        if not result or not result.get("success"):
+            error_msg = result.get("error", "Unknown error") if result else "Agent service unavailable"
+            raise ApplicationError(
+                code="ORCHESTRATION_ERROR",
+                message=f"AI agents failed: {error_msg}",
+                retryable=True,
+                hint="The AI generation service encountered an issue. Please try again."
+            )
+        state.log_event(BuildPhase.GENERATING, "✓ Design elements coming together beautifully")
+        return result
+    except Exception as e:
+        _handle_error(state, e, is_application_error=isinstance(e, ApplicationError))
+        return None
 
 
 # ============================================================================
@@ -226,17 +165,78 @@ async def _run_build(session_id: str, place_id: str, render_prefs: dict) -> None
             logger.warning(f"[BUILD] No place data returned for {place_id}")
             return
         
+        # Create engaging opening narrative based on business info
+        business_name = place_data.get("name", "your business")
+        # Ensure we never show place_id - if name looks like a place_id, use fallback
+        if not business_name or business_name.startswith("places/") or business_name.startswith("ChIJ"):
+            business_name = "your business"
+        
+        business_type = place_data.get("types", ["establishment"])[0] if place_data.get("types") else "business"
+        category = business_type.replace("_", " ").title()
+        
+        # Determine business type description
+        type_desc = ""
+        if category and category.lower() not in ["establishment", "point of interest"]:
+            type_desc = category.lower()
+        
+        # Create a story-like opening message similar to AI generator example
+        opening_message = f"I'll create a stunning landing page for {business_name}"
+        if type_desc:
+            opening_message += f", a {type_desc}"
+        opening_message += ", with an elegant, high-end design."
+        
+        # Add plan details
+        has_photos = len(place_data.get("photos", [])) > 0
+        has_reviews = len(place_data.get("reviews", [])) > 0
+        
+        plan_features = []
+        plan_features.append("Hero section with bold branding")
+        if has_reviews:
+            plan_features.append("Customer testimonials showcase")
+        if has_photos:
+            plan_features.append("Beautiful imagery gallery")
+        plan_features.append("Key benefits highlight")
+        plan_features.append("Contact information section")
+        plan_features.append("Clean, modern footer")
+        
+        # Show plan details in correct order: Plan: header first, then opening message, then sections
+        state.log_event(BuildPhase.ORCHESTRATING, "Plan:")
+        state.log_event(BuildPhase.ORCHESTRATING, opening_message)
+        state.log_event(BuildPhase.ORCHESTRATING, "Key Features:")
+        for feature in plan_features[:5]:  # Show up to 5 features
+            state.log_event(BuildPhase.ORCHESTRATING, f"• {feature}")
+        state.log_event(BuildPhase.ORCHESTRATING, "Design:")
+        state.log_event(BuildPhase.ORCHESTRATING, "• Fresh color palette")
+        state.log_event(BuildPhase.ORCHESTRATING, "• Luxurious spacing and typography")
+        state.log_event(BuildPhase.ORCHESTRATING, "• Smooth fade-in animations")
+        state.log_event(BuildPhase.ORCHESTRATING, "• Premium, breathable layout")
+        state.log_event(BuildPhase.ORCHESTRATING, "Structure:")
+        state.log_event(BuildPhase.ORCHESTRATING, "• Single responsive landing page with multiple sections")
+        
         logger.info(f"[STEP 2] Calling AI agents...")
         # Step 2: Call AI agents
-        state.log_event(BuildPhase.ORCHESTRATING, "Initializing page creation workflow...")
         agents_result = await _call_ai_agents(session_id, place_data, render_prefs, state)
+        
+        if not agents_result or not agents_result.get("success"):
+            error_msg = None
+            if agents_result:
+                error_msg = agents_result.get("error", "Unknown error")
+                logger.error(f"AI agents failed: {error_msg}")
+                state.log_event(BuildPhase.ERROR, f"Build failed: {error_msg}")
+            else:
+                error_msg = "AI agents service unavailable"
+                logger.error("AI agents returned None - build failed")
+                state.log_event(BuildPhase.ERROR, f"Build failed: {error_msg}")
+            state.metadata["success"] = False
+            state.metadata["error"] = {"message": error_msg, "retryable": True}
+            return
         
         logger.info(f"[STEP 3] Processing bundle...")
         # Step 3: Process bundle
         await _process_bundle(session_id, agents_result["bundle"], state)
         
         # Success
-        state.log_event(BuildPhase.READY, "✓ Your landing page is ready to view!")
+        state.log_event(BuildPhase.READY, f"✓ Your stunning landing page is ready!")
         state.metadata["success"] = True
         state.metadata["business_name"] = place_data.get("name", "Unknown")
         logger.info(f"Build completed successfully for session {session_id}")
@@ -246,6 +246,12 @@ async def _run_build(session_id: str, place_id: str, render_prefs: dict) -> None
     except Exception as e:
         logger.exception("Unexpected error in build")
         _handle_error(state, e, is_application_error=False)
+    finally:
+        # Ensure httpx client is properly closed
+        try:
+            await google_fetcher.close()
+        except Exception as cleanup_err:
+            logger.warning(f"Error closing httpx client: {cleanup_err}")
 
 
 def _run_build_sync(session_id: str, place_id: str, render_prefs: dict) -> None:
@@ -257,36 +263,55 @@ def _run_build_sync(session_id: str, place_id: str, render_prefs: dict) -> None:
     
     logger.info(f"[BACKGROUND TASK] Starting build for session {session_id}")
     
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    loop = None
     try:
         print("[BACKGROUND TASK] Creating new event loop...", flush=True)
-        loop.run_until_complete(_run_build(session_id, place_id, render_prefs))
+        # Use asyncio.run() which properly handles event loop lifecycle
+        # This ensures all async resources are cleaned up before the loop closes
+        asyncio.run(_run_build(session_id, place_id, render_prefs))
         print("[BACKGROUND TASK] ✓ Build completed successfully", flush=True)
     except Exception as e:
         print(f"[BACKGROUND TASK] ✗ ERROR: {e}", flush=True)
         logger.error(f"Sync wrapper error: {e}", exc_info=True)
-    finally:
-        loop.close()
+        # Ensure httpx client is closed even on error
+        try:
+            # Close httpx client if it exists
+            if hasattr(google_fetcher, '_client') and google_fetcher._client:
+                # Try to close in a new event loop if needed
+                cleanup_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(cleanup_loop)
+                try:
+                    cleanup_loop.run_until_complete(google_fetcher.close())
+                except Exception:
+                    pass  # Ignore cleanup errors
+                finally:
+                    cleanup_loop.close()
+        except Exception:
+            pass  # Ignore cleanup errors
 
 
 async def cleanup_old_sessions() -> None:
     """Periodically clean up terminal sessions older than 1 hour"""
+    import asyncio
     while True:
-        await asyncio.sleep(300)  # Check every 5 minutes
-        
-        cutoff_time = datetime.utcnow() - timedelta(hours=1)
-        sessions_to_remove = [
-            session_id for session_id, state in session_store.items()
-            if state.is_terminal() and state.last_updated and state.last_updated < cutoff_time
-        ]
-        
-        for session_id in sessions_to_remove:
-            del session_store[session_id]
-            logger.info(f"Cleaned up old session: {session_id}")
-        
-        if sessions_to_remove:
-            logger.info(f"Cleaned up {len(sessions_to_remove)} old sessions")
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            
+            cutoff_time = datetime.utcnow() - timedelta(hours=1)
+            sessions_to_remove = [
+                session_id for session_id, state in session_store.items()
+                if state.is_terminal() and state.last_updated and state.last_updated < cutoff_time
+            ]
+            
+            for session_id in sessions_to_remove:
+                del session_store[session_id]
+                logger.info(f"Cleaned up old session: {session_id}")
+            
+            if sessions_to_remove:
+                logger.info(f"Cleaned up {len(sessions_to_remove)} old sessions")
+        except Exception as e:
+            logger.error(f"Error in cleanup_old_sessions: {e}", exc_info=True)
+            await asyncio.sleep(300)  # Wait before retrying on error
 
 
 def _cleanup_old_artifacts() -> None:
@@ -325,7 +350,11 @@ async def start_build(
     request: BuildRequest,
     background_tasks: BackgroundTasks
 ) -> BuildResponse:
-    """Start a new build for a place_id"""
+    """
+    Start a new build for a place_id.
+    
+    No caching - every request generates a fresh landing page.
+    """
     logger.info(f"POST /api/build received for place_id: {request.place_id}")
     
     # Clean old artifacts
@@ -338,9 +367,9 @@ async def start_build(
     # Set render prefs
     render_prefs = request.render_prefs.model_dump() if request.render_prefs else _get_default_render_prefs()
     
-    # Start background build
+    # Start background build (no caching - always fresh)
     background_tasks.add_task(_run_build_sync, session_id, request.place_id, render_prefs)
     logger.info(f"Background task started for session {session_id}")
     
-    return BuildResponse(session_id=session_id, cached=False)
+    return BuildResponse(session_id=session_id)
 

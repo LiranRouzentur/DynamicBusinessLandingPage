@@ -31,9 +31,10 @@ class ApplicationError(Exception):
     
     def model_dump(self):
         """Return dict representation for API responses"""
+        code_value = self.code.value if hasattr(self.code, "value") else str(self.code)
         return {
             "error_id": self.error_id,
-            "code": self.code.value,
+            "code": code_value,
             "message": self.message,
             "hint": self.hint,
             "retryable": self.retryable,

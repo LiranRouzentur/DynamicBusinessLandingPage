@@ -39,7 +39,8 @@ async def receive_event(event: EventRequest):
         "GENERATING": BuildPhase.GENERATING,
         "QA": BuildPhase.QA,
         "READY": BuildPhase.READY,
-        "ERROR": BuildPhase.ERROR
+        "ERROR": BuildPhase.ERROR,
+        "TESTING": BuildPhase.ORCHESTRATING  # Map TESTING to ORCHESTRATING for now
     }
     
     phase = phase_map.get(event.phase, BuildPhase.IDLE)

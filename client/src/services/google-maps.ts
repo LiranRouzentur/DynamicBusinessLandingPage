@@ -1,73 +1,73 @@
 /**
  * Google Maps Places Autocomplete wrapper
- * Uses modern PlaceAutocompleteElement as recommended by Google
+ * Optimized with Promise-based loading
  */
 
-let isLoading = false;
-let isLoaded = false;
+let loadPromise: Promise<void> | null = null;
 
-export const initGoogleMaps = (apiKey: string) => {
+export const initGoogleMaps = (apiKey: string): Promise<void> => {
   // Check if already loaded
   if (window.google && window.google.maps) {
-    isLoaded = true;
     return Promise.resolve();
   }
 
-  // Check if already loading
-  if (isLoading) {
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
-        if (isLoaded) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-    });
+  // Return existing promise if already loading
+  if (loadPromise) {
+    return loadPromise;
   }
 
   // Check if script tag already exists in DOM
-  const existingScript = document.querySelector(
+  const existingScript = document.querySelector<HTMLScriptElement>(
     'script[src*="maps.googleapis.com"]'
   );
+  
   if (existingScript) {
-    isLoading = true;
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
+    // Wait for existing script to load
+    loadPromise = new Promise((resolve, reject) => {
+      if (window.google && window.google.maps) {
+        resolve();
+        return;
+      }
+      
+      existingScript.addEventListener('load', () => {
         if (window.google && window.google.maps) {
-          isLoaded = true;
-          isLoading = false;
-          clearInterval(checkInterval);
           resolve();
+        } else {
+          reject(new Error('Google Maps loaded but API not available'));
         }
-      }, 100);
+      });
+      
+      existingScript.addEventListener('error', () => {
+        reject(new Error('Failed to load Google Maps API'));
+      });
     });
+    
+    return loadPromise;
   }
 
-  // Load Google Maps API asynchronously with callback
-  isLoading = true;
-  const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=__googleMapsInit`;
-
-  // Create callback function
-  window.__googleMapsInit = () => {
-    isLoaded = true;
-    isLoading = false;
-  };
-
-  return new Promise((resolve, reject) => {
-    script.onload = () => {
-      // Wait for the callback to fire
-      const checkInterval = setInterval(() => {
-        if (isLoaded) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
+  // Load Google Maps API with callback
+  loadPromise = new Promise((resolve, reject) => {
+    const callbackName = '__googleMapsInit';
+    
+    // Create callback function
+    (window as any)[callbackName] = () => {
+      delete (window as any)[callbackName];
+      resolve();
     };
+
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async&callback=${callbackName}`;
+    script.async = true;
+    script.defer = true;
+    
     script.onerror = () => {
-      isLoading = false;
+      delete (window as any)[callbackName];
+      loadPromise = null;
       reject(new Error("Failed to load Google Maps API"));
     };
+    
     document.head.appendChild(script);
   });
+
+  return loadPromise;
 };

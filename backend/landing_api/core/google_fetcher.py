@@ -70,7 +70,7 @@ class GoogleFetcher:
         """Fetch place details from Google Places API v1"""
         field_mask = ",".join([
             # identity + links
-            "id", "name", "types", "primaryType", "googleMapsUri", "websiteUri",
+            "id", "name", "displayName", "types", "primaryType", "googleMapsUri", "websiteUri",
             # location
             "formattedAddress", "addressComponents", "location", "viewport",
             # contact
@@ -114,10 +114,40 @@ class GoogleFetcher:
     
     async def _build_response_obj(self, place: Dict[str, Any]) -> Dict[str, Any]:
         """Build response object in the format expected by orchestrator"""
+        # Extract name with fallback logic
+        # IMPORTANT: Google Places API v1 returns "name" as the place_id (e.g., "places/ChIJ...")
+        # The actual business name is in "displayName" which can be either a string or dict with "text" key
+        display_name = place.get("displayName")
+        
+        # Extract text from displayName if it's a dict
+        if isinstance(display_name, dict):
+            name = display_name.get("text") or display_name.get("languageCode") or ""
+        elif isinstance(display_name, str):
+            name = display_name
+        else:
+            name = place.get("name")
+        
+        # Check if name looks like a place_id and fix it
+        if name and isinstance(name, str) and (name.startswith("places/") or name.startswith("ChIJ")):
+            logger.warning(f"[GOOGLE FETCH] Name field contains place_id: {name}, looking for actual name")
+            # Try to get from formatted address as fallback
+            name = None
+        
+        # Handle case where name might be empty string or None
+        if not name or (isinstance(name, str) and name.strip() == ""):
+            # Last resort: use formatted_address or a default
+            formatted_addr = place.get("formattedAddress", "")
+            if formatted_addr:
+                # Extract first part of address as fallback
+                name = formatted_addr.split(",")[0].strip()
+            else:
+                name = "Business"
+            logger.warning(f"[GOOGLE FETCH] Name field was empty, using fallback: {name}")
+        
         # Core fields
         out: Dict[str, Any] = {
             "place_id": place.get("id"),
-            "name": place.get("name"),
+            "name": name,
             "formatted_address": place.get("formattedAddress"),
             "types": place.get("types") or [],
             "primary_type": place.get("primaryType"),
@@ -185,9 +215,20 @@ class GoogleFetcher:
             logger.info("[GOOGLE FETCH] Fetching place details from Places API v1...")
             place_data = await self._fetch_place_details(place_id)
             
+            # Log the raw name from API response for debugging
+            raw_name = place_data.get("name")
+            logger.info(f"[GOOGLE FETCH] Raw API response name field: {repr(raw_name)}")
+            
             # Build response object in the expected format
             logger.info("[GOOGLE FETCH] Building response object...")
             response_obj = await self._build_response_obj(place_data)
+            
+            # Verify name was extracted correctly
+            final_name = response_obj.get("name")
+            logger.info(f"[GOOGLE FETCH] Final name in response object: {repr(final_name)}")
+            
+            if not final_name or final_name.strip() == "":
+                logger.warning(f"[GOOGLE FETCH] Name is empty in response! Raw response keys: {list(place_data.keys())}")
             
             logger.info("[GOOGLE FETCH] Returning place data")
             return response_obj

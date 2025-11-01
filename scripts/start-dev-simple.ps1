@@ -9,9 +9,18 @@ Write-Host ""
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $backendPath = Join-Path $projectRoot "backend"
 $clientPath = Join-Path $projectRoot "client"
-$agentsPath = Join-Path $projectRoot "ai"
+$agentsPath = Join-Path $projectRoot "agents"
+$mcpPath = Join-Path $projectRoot "mcp"
+$logsPath = Join-Path $projectRoot "logs"
+
+# Ensure logs directory exists (services will log here automatically)
+if (-not (Test-Path $logsPath)) {
+    New-Item -ItemType Directory -Path $logsPath | Out-Null
+}
+# All services now log to console windows
 $venvPath = Join-Path $backendPath ".venv"
 $agentsVenvPath = Join-Path $agentsPath ".venv"
+$mcpVenvPath = Join-Path $mcpPath ".venv"
 
 # Stop any existing servers on ports 8000 and 8002
 Write-Host "Checking for existing servers..." -ForegroundColor Yellow
@@ -23,6 +32,11 @@ try {
         }
     # Kill processes on port 8002 (AI agents server)
     Get-NetTCPConnection -LocalPort 8002 -ErrorAction SilentlyContinue | 
+        ForEach-Object { 
+            Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+        }
+    # Kill processes on port 8003 (MCP server)
+    Get-NetTCPConnection -LocalPort 8003 -ErrorAction SilentlyContinue | 
         ForEach-Object { 
             Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
         }
@@ -70,8 +84,9 @@ if (-not (Test-Path $venvPath)) {
 $backendRequirements = Join-Path $backendPath "requirements.txt"
 if (Test-Path $backendRequirements) {
     Write-Host "Installing backend dependencies from requirements.txt..." -ForegroundColor Yellow
-    & "$venvPath\Scripts\pip.exe" install --upgrade pip
-    & "$venvPath\Scripts\pip.exe" install -r $backendRequirements
+    $backendPythonExe = Join-Path $venvPath "Scripts\python.exe"
+    & $backendPythonExe -m pip install --upgrade pip 2>&1 | Out-Null
+    & $backendPythonExe -m pip install -r $backendRequirements
     Write-Host "Backend dependencies installed" -ForegroundColor Green
 } else {
     Write-Host "WARNING: backend/requirements.txt not found!" -ForegroundColor Yellow
@@ -88,11 +103,31 @@ if (-not (Test-Path $agentsVenvPath)) {
 $agentsRequirements = Join-Path $agentsPath "requirements.txt"
 if (Test-Path $agentsRequirements) {
     Write-Host "Installing agents dependencies from requirements.txt..." -ForegroundColor Yellow
-    & "$agentsVenvPath\Scripts\pip.exe" install --upgrade pip
-    & "$agentsVenvPath\Scripts\pip.exe" install -r $agentsRequirements
+    $pythonExe = Join-Path $agentsVenvPath "Scripts\python.exe"
+    & $pythonExe -m pip install --upgrade pip 2>&1 | Out-Null
+    & $pythonExe -m pip install -r $agentsRequirements
     Write-Host "Agents dependencies installed" -ForegroundColor Green
 } else {
-    Write-Host "WARNING: ai/requirements.txt not found!" -ForegroundColor Yellow
+    Write-Host "WARNING: agents/requirements.txt not found!" -ForegroundColor Yellow
+}
+
+# Create MCP venv if needed
+if (-not (Test-Path $mcpVenvPath)) {
+    Write-Host "Creating MCP virtual environment..." -ForegroundColor Yellow
+    python -m venv $mcpVenvPath
+    Write-Host "MCP virtual environment created" -ForegroundColor Green
+}
+
+# Install MCP dependencies from requirements.txt
+$mcpRequirements = Join-Path $mcpPath "requirements.txt"
+if (Test-Path $mcpRequirements) {
+    Write-Host "Installing MCP dependencies from requirements.txt..." -ForegroundColor Yellow
+    $mcpPythonExe = Join-Path $mcpVenvPath "Scripts\python.exe"
+    & $mcpPythonExe -m pip install --upgrade pip 2>&1 | Out-Null
+    & $mcpPythonExe -m pip install -r $mcpRequirements
+    Write-Host "MCP dependencies installed" -ForegroundColor Green
+} else {
+    Write-Host "WARNING: mcp/requirements.txt not found!" -ForegroundColor Yellow
 }
 
 # Install frontend dependencies if needed
@@ -110,6 +145,7 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Starting servers in separate windows..." -ForegroundColor Cyan
 Write-Host ""
+Write-Host "MCP:      http://localhost:8003/health" -ForegroundColor Green
 Write-Host "Agents:   http://localhost:8002" -ForegroundColor Green
 Write-Host "Backend:  http://localhost:8000" -ForegroundColor Green
 Write-Host "Frontend: http://localhost:5173" -ForegroundColor Green
@@ -150,6 +186,14 @@ function Cleanup-Servers {
                 $pidsKilled += $processId
             }
         
+        # Kill MCP server (port 8003)
+        Get-NetTCPConnection -LocalPort 8003 -ErrorAction SilentlyContinue | 
+            ForEach-Object { 
+                $processId = $_.OwningProcess
+                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+                $pidsKilled += $processId
+            }
+        
         if ($pidsKilled.Count -gt 0) {
             Write-Host "Killed $($pidsKilled.Count) server process(es)" -ForegroundColor Green
         }
@@ -166,10 +210,21 @@ function Cleanup-Servers {
 # Register cleanup on script exit
 Register-EngineEvent PowerShell.Exiting -Action { Cleanup-Servers } | Out-Null
 
+# Start MCP server in new window (must start first) - FastMCP/Uvicorn
+Write-Host "Starting MCP Server (FastMCP)..." -ForegroundColor Cyan
+$mcpWindowTitle = "MCP Server - Port 8003"
+# MCP logs to console
+$mcpArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$mcpWindowTitle'; cd '$mcpPath'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding `$false; [Console]::InputEncoding = New-Object System.Text.UTF8Encoding `$false; `$env:PYTHONUNBUFFERED='1'; `$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONDONTWRITEBYTECODE=1; `$env:WORKSPACE_ROOT='$projectRoot\mcp\storage\workspace'; `$env:MCP_HOST='127.0.0.1'; `$env:MCP_PORT='8003'; `$env:LOG_TO_FILE='false'; `& '$mcpVenvPath\Scripts\Activate.ps1'; uvicorn app.server:app --host 127.0.0.1 --port 8003 --log-level info"
+
+$mcpProcess = Start-Process powershell -ArgumentList $mcpArgs -PassThru
+
+Start-Sleep -Seconds 3
+
 # Start agents service in new window with -PassThru to get process object
 Write-Host "Starting Agents Service..." -ForegroundColor Cyan
 $agentsWindowTitle = "Agents Service - Port 8002"
-$agentsArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$agentsWindowTitle'; cd '$agentsPath'; `$env:VIRTUAL_ENV_DISABLE_PROMPT=1; `$env:PYTHONPATH='$agentsPath'; `$env:PYTHONDONTWRITEBYTECODE=1; `& '$agentsVenvPath\Scripts\Activate.ps1'; python -m uvicorn agents.main:app --reload --log-level debug --host 127.0.0.1 --port 8002"
+# Agents logs to console
+$agentsArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$agentsWindowTitle'; cd '$agentsPath\app'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding `$false; [Console]::InputEncoding = New-Object System.Text.UTF8Encoding `$false; `$env:VIRTUAL_ENV_DISABLE_PROMPT=1; `$env:PYTHONUNBUFFERED='1'; `$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$agentsPath'; `$env:PYTHONDONTWRITEBYTECODE=1; `$env:LOG_TO_FILE='false'; `& '$agentsVenvPath\Scripts\Activate.ps1'; python -m uvicorn app.main:app --reload --log-level debug --host 127.0.0.1 --port 8002"
 
 $agentsProcess = Start-Process powershell -ArgumentList $agentsArgs -PassThru
 
@@ -178,7 +233,8 @@ Start-Sleep -Seconds 2
 # Start backend in new window with -PassThru
 Write-Host "Starting Backend Server..." -ForegroundColor Cyan
 $backendWindowTitle = "Backend Server - Port 8000"
-$backendArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$backendWindowTitle'; cd '$backendPath'; `$env:VIRTUAL_ENV_DISABLE_PROMPT=1; `$env:PYTHONDONTWRITEBYTECODE=1; `& '$venvPath\Scripts\Activate.ps1'; uvicorn landing_api.main:app --reload --log-level debug --host 127.0.0.1 --port 8000"
+# Backend logs to console (uvicorn handles logging)
+$backendArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$backendWindowTitle'; cd '$backendPath'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding `$false; [Console]::InputEncoding = New-Object System.Text.UTF8Encoding `$false; `$env:VIRTUAL_ENV_DISABLE_PROMPT=1; `$env:PYTHONUNBUFFERED='1'; `$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONDONTWRITEBYTECODE=1; `& '$venvPath\Scripts\Activate.ps1'; uvicorn landing_api.main:app --reload --log-level debug --host 127.0.0.1 --port 8000"
 
 $backendProcess = Start-Process powershell -ArgumentList $backendArgs -PassThru
 
@@ -187,12 +243,14 @@ Start-Sleep -Seconds 2
 # Start frontend in new window with -PassThru
 Write-Host "Starting Frontend Server..." -ForegroundColor Cyan
 $frontendWindowTitle = "Frontend Server - Port 5173"
-$frontendArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$frontendWindowTitle'; cd '$clientPath'; npm run dev"
+# Frontend logs to console (Vite handles logging)
+$frontendArgs = "-NoExit -Command `$host.UI.RawUI.WindowTitle = '$frontendWindowTitle'; cd '$clientPath'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding `$false; [Console]::InputEncoding = New-Object System.Text.UTF8Encoding `$false; npm run dev"
 
 $frontendProcess = Start-Process powershell -ArgumentList $frontendArgs -PassThru
 
 # Save PIDs to file for cleanup
 $pids = @()
+if ($mcpProcess) { $pids += $mcpProcess.Id }
 if ($agentsProcess) { $pids += $agentsProcess.Id }
 if ($backendProcess) { $pids += $backendProcess.Id }
 if ($frontendProcess) { $pids += $frontendProcess.Id }
