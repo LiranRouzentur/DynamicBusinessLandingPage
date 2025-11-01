@@ -1,8 +1,10 @@
 import json
 import time
-import sys
+import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 class Bundle:
     def __init__(self, root, util, csp, adaptive_manager=None):
@@ -21,7 +23,7 @@ class Bundle:
             "result": "ERROR" if error else "OK",
             "error": error
         }
-        print(json.dumps(telemetry), file=sys.stderr)
+        logger.info(json.dumps(telemetry))
 
     def write_files(self, params: Dict[str, Any]):
         start = time.time()

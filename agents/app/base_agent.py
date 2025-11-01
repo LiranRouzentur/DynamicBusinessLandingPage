@@ -17,7 +17,8 @@ ENABLE_DEBUG_FILES = os.getenv("AGENTS_DEBUG_FILES", "false").lower() == "true"
 # ENABLED: OpenAI Python SDK 2.6.1+ supports Responses API
 USE_RESPONSES_API = os.getenv("USE_RESPONSES_API", "true").lower() == "true"
 
-# Runtime detection: Check if response_format is supported by responses.create()
+# Checks if OpenAI SDK supports response_format parameter in responses.create() via runtime inspection.
+# Returns True if supported, False otherwise.
 def _check_response_format_support(client: OpenAI) -> bool:
     """
     Runtime check if the current OpenAI SDK supports response_format parameter
@@ -30,6 +31,8 @@ def _check_response_format_support(client: OpenAI) -> bool:
         logger.warning(f"Could not detect response_format support: {e}")
         return False
 
+# Checks if OpenAI SDK supports tools parameter for custom function calling in responses.create().
+# Returns True if supported, False otherwise - determines if strict function calling is available.
 def _check_tools_support(client: OpenAI) -> bool:
     """
     Runtime check if the current OpenAI SDK supports tools parameter
@@ -42,6 +45,8 @@ def _check_tools_support(client: OpenAI) -> bool:
         logger.warning(f"Could not detect tools support: {e}")
         return False
 
+# Converts JSON schema to OpenAI tool/function calling format for Responses API.
+# Removes 'title' field and returns flat structure with 'strict: True' for schema validation.
 def _convert_schema_to_tool(schema: Dict[str, Any], tool_name: str = None) -> Dict[str, Any]:
     """
     Convert a JSON schema to OpenAI tool/function calling format
@@ -72,15 +77,7 @@ def _convert_schema_to_tool(schema: Dict[str, Any], tool_name: str = None) -> Di
     
     return tool
 
-# Import telemetry utilities
-try:
-    from app.core.telemetry import RequestContext, log_token_savings, log_cache_usage, enrich_error_context
-except ImportError:
-    # Fallback if telemetry not available
-    RequestContext = None
-    log_token_savings = None
-    log_cache_usage = None
-    enrich_error_context = None
+# Telemetry utilities removed - were never used in production
 
 
 class AgentError(Exception):
@@ -91,6 +88,8 @@ class AgentError(Exception):
 class BaseAgent:
     """Base class for all agents with JSON response file support and Responses API (stateful context)"""
     
+    # Initializes base agent with OpenAI client, model config, and response file handling.
+    # Detects SDK capabilities (tools, response_format) and sets up response_id caching for stateful context.
     def __init__(
         self, 
         client: OpenAI, 
@@ -143,6 +142,8 @@ class BaseAgent:
         self.response_file = agent_dir / f"{agent_name.lower()}_response.json"
         self.request_file = agent_dir / f"{agent_name.lower()}_request.json"
     
+    # Clears response JSON file before new request (only if AGENTS_DEBUG_FILES=true).
+    # Used for debugging agent outputs without cluttering production environments.
     def _clear_response_file(self):
         """Clear the response file before each request (only if debug enabled)"""
         if not ENABLE_DEBUG_FILES:
@@ -150,6 +151,8 @@ class BaseAgent:
         if self.response_file.exists():
             self.response_file.write_text("{}", encoding="utf-8")
     
+    # Clears request JSON file before new request (only if AGENTS_DEBUG_FILES=true).
+    # Prevents old debug data from being confused with current request data.
     def _clear_request_file(self):
         """Clear the request file before each request (only if debug enabled)"""
         if not ENABLE_DEBUG_FILES:
@@ -157,6 +160,8 @@ class BaseAgent:
         if self.request_file.exists():
             self.request_file.write_text("{}", encoding="utf-8")
     
+    # Writes complete agent request payload to JSON file for debugging (only if AGENTS_DEBUG_FILES=true).
+    # Includes model, temperature, messages/instructions, and schema config.
     def _write_request(self, request_data: Dict[str, Any]):
         """Write agent request to JSON file (only if debug enabled)"""
         if not ENABLE_DEBUG_FILES:
@@ -165,6 +170,8 @@ class BaseAgent:
         with open(self.request_file, "w", encoding="utf-8") as f:
             json.dump(request_data, f, indent=2, ensure_ascii=False)
     
+    # Writes agent response to JSON file with request metadata for debugging (only if AGENTS_DEBUG_FILES=true).
+    # Combines request and response data to understand full context of API calls.
     def _write_response(self, response: Dict[str, Any], request_metadata: Optional[Dict[str, Any]] = None):
         """Write agent response to JSON file with optional request metadata (only if debug enabled)"""
         if not ENABLE_DEBUG_FILES:
@@ -185,6 +192,8 @@ class BaseAgent:
             with open(self.response_file, "w", encoding="utf-8") as f:
                 json.dump(response, f, indent=2, ensure_ascii=False)
     
+    # Calls OpenAI Responses API with stateful context support for token-efficient retries (80-90% savings).
+    # Uses strict tool calling or response_format for guaranteed valid JSON; returns (result_dict, response_id).
     async def _call_responses_api(
         self,
         system_prompt: str,
@@ -499,15 +508,7 @@ class BaseAgent:
                 token_savings = estimated_original_tokens - prompt_tokens
                 savings_pct = (token_savings / estimated_original_tokens) * 100 if estimated_original_tokens > 0 else 0
                 
-                # Use telemetry if available
-                if log_token_savings and cache_key:
-                    try:
-                        # Create minimal context for logging
-                        ctx = RequestContext(agent=self.agent_name, phase="retry")
-                        ctx.metadata = {"cache_key": cache_key}
-                        log_token_savings(ctx, prompt_tokens, estimated_original_tokens, previous_response_id)
-                    except Exception:
-                        pass
+                # Token savings logging removed - telemetry module was unused
                 
                 logger.info(
                     f"[{self.agent_name}] 💰 TOKEN_SAVINGS | "
@@ -567,12 +568,7 @@ class BaseAgent:
             # Cache response_id for this conversation
             if cache_key:
                 self.response_id_cache[cache_key] = response_id
-                if log_cache_usage:
-                    try:
-                        ctx = RequestContext(agent=self.agent_name, phase="cache_store")
-                        log_cache_usage(ctx, cache_key, hit=False, response_id=response_id)
-                    except Exception:
-                        pass
+                # Cache usage logging removed - telemetry module was unused
             
             return result, response_id
             
@@ -615,6 +611,8 @@ class BaseAgent:
                 pass
             raise AgentError(error_msg)
     
+    # Calls OpenAI Chat Completions API with optional JSON schema validation (fallback method).
+    # Returns parsed JSON dict; responses_api_mode=True allows large HTML output without schema truncation.
     async def _call_openai(
         self,
         system_prompt: str,

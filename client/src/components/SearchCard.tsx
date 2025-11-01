@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { initGoogleMaps } from "../services/google-maps";
 import { GOOGLE_MAPS_API_KEY } from "../utils/constants";
+import { logger } from "../utils/logger";
 
 interface SearchCardProps {
   onPlaceSelect: (placeId: string) => void;
@@ -26,14 +27,11 @@ function SearchCard({ onPlaceSelect, isInPanel = false }: SearchCardProps) {
           setIsGoogleLoaded(true);
         })
         .catch((error) => {
-          console.error(
-            "[SearchCard] Failed to initialize Google Maps:",
-            error
-          );
+          logger.error("[SearchCard] Failed to initialize Google Maps:", error);
           setError("Failed to load Google Maps");
         });
     } else {
-      console.warn("[SearchCard] Google Maps API key not configured");
+      logger.warn("[SearchCard] Google Maps API key not configured");
       setError("Google Maps API key not configured");
     }
   }, []);
@@ -61,7 +59,7 @@ function SearchCard({ onPlaceSelect, isInPanel = false }: SearchCardProps) {
         if (place && place.place_id) {
           onPlaceSelect(place.place_id);
         } else {
-          console.error("[SearchCard] Invalid place selection");
+          logger.error("[SearchCard] Invalid place selection");
         }
       });
 
@@ -71,7 +69,7 @@ function SearchCard({ onPlaceSelect, isInPanel = false }: SearchCardProps) {
         }
       };
     } catch (error) {
-      console.error("[SearchCard] Error initializing Autocomplete:", error);
+      logger.error("[SearchCard] Error initializing Autocomplete:", error);
       setError("Failed to initialize search");
       return undefined;
     }
@@ -102,8 +100,7 @@ function SearchCard({ onPlaceSelect, isInPanel = false }: SearchCardProps) {
             height: "auto",
           }}
           onError={(e) => {
-            // Fallback if image is not found
-            console.warn("[SearchCard] Logo image not found");
+            logger.warn("[SearchCard] Logo image not found");
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
@@ -121,11 +118,6 @@ function SearchCard({ onPlaceSelect, isInPanel = false }: SearchCardProps) {
           }`}
         />
         {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-        {!GOOGLE_MAPS_API_KEY && (
-          <p className="text-sm text-yellow-600 mt-2">
-            Google Maps API key not configured
-          </p>
-        )}
       </div>
     </div>
   );

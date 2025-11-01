@@ -1,6 +1,8 @@
-import hashlib, json, pathlib, time
+import hashlib, json, pathlib, time, logging
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 class Util:
     def __init__(self, root): 
@@ -81,3 +83,19 @@ class Util:
     def timestamp(self) -> str:
         """ISO timestamp for telemetry"""
         return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def emit_telemetry(tool: str, tree_hash: str, duration_ms: int,
+                   memoized: bool, status: str, error: Optional[str] = None):
+    """Shared telemetry emission utility"""
+    telemetry = {
+        "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+        "tool": tool,
+        "tree_hash": tree_hash,
+        "duration_ms": duration_ms,
+        "memoized": memoized,
+        "status": status,
+        "result": "ERROR" if error else "OK",
+        "error": error
+    }
+    logger.info(json.dumps(telemetry))

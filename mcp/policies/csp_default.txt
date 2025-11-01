@@ -1,7 +1,7 @@
 default-src 'self';
 script-src 'self';
 style-src 'self';
-img-src 'self' data: https://images.unsplash.com https://unsplash.com https://pexels.com https://pixabay.com;
+img-src 'self' data: https://*.googleusercontent.com https://images.unsplash.com https://images.pexels.com https://*.pixabay.com https://upload.wikimedia.org;
 font-src 'self' data:;
 object-src 'none';
 base-uri 'self';

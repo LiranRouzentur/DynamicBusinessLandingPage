@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     api_title: str = "Dynamic Business Landing Page API"
     api_version: str = "0.1.0"
     
+    # Security
+    api_key: str = Field(default="", env="API_KEY")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

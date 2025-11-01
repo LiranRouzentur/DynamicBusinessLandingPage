@@ -15,8 +15,8 @@ You must **query and analyze the web** to produce a concise **business summary**
 
 2. **Research Brand Identity**
    - Locate official site (business or chain). Set `business_page_url`.
-   - Extract logo URL (prefer SVG/PNG > 128px).
    - Extract brand colors: at minimum `primary` and `secondary` as 7‑char `#RRGGBB`.
+   - NOTE: Logo URLs are NOT used (to avoid CORS issues). Do not prioritize logo extraction.
 
 3. **Media Enrichment**
    - Business images: official galleries, Google/Tripadvisor/Yelp where permitted.
@@ -37,7 +37,7 @@ Run all checks locally before emitting output. Each check yields `passed`, and a
 - Constraints:
   - `business_page_url` is null or an absolute URL with protocol.
   - `business_summary` is 12–240 chars, declarative, no marketing fluff, no first‑person.
-  - `assats.logo_url` is null or absolute URL to an image file type (svg|png|jpg|jpeg|webp).
+  - `assats.logo_url` can be null or a URL (but note: logo URLs are not used in generated HTML to avoid CORS).
   - `assats.brand_colors.primary|secondary` are `^#([A-Fa-f0-9]{6})$`.
   - Arrays contain only unique strings; limit ≤ 12 per array.
 
@@ -114,12 +114,11 @@ Run all checks locally before emitting output. Each check yields `passed`, and a
 ### 4.8 Completeness & Self-Healing Strategies
 - If `business_page_url` is absent and an obvious official domain exists on first two SERP pages, keep searching (retry budget permitting).
 - **Logo Self-Heal Strategy** (if `logo_url` fails validation):
-  Try in order:
-  1. Brand site favicon/apple-touch-icon (`/favicon.ico`, `/apple-touch-icon.png`)
-  2. Common paths: `/<logo>.svg|.png`, `/assets/logo.svg`, `/logo/logo.svg`
-  3. `og:image` only if it looks like a logo (check dimensions, transparency, aspect ratio)
-  4. Wikipedia file on `upload.wikimedia.org` (e.g., search Wikimedia Commons)
-  5. If all fail, set `logo_url` to `null` and continue
+  NOTE: Logo URLs are not used in HTML generation (to avoid CORS). Logo collection is optional and low priority.
+  If you want to include it for completeness:
+  1. Set to `null` if no clear logo found
+  2. Only include if from Wikimedia Commons (`upload.wikimedia.org`)
+  3. Do not waste retries on logo URLs - focus on business/stock images instead
 
 - **Business Images Self-Heal Strategy** (if initial URLs are invalid):
   - **PRIORITIZE**: First try Google Places images from `google_data.photos` (if available) - these are official business photos

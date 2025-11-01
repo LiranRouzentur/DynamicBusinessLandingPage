@@ -15,13 +15,15 @@
   },
   "current_tier": "default",
   "allowed_domains": [
+    "googleusercontent.com",
     "images.unsplash.com",
-    "unsplash.com",
-    "pexels.com",
+    "images.pexels.com",
     "pixabay.com",
+    "upload.wikimedia.org",
     "fonts.googleapis.com",
     "fonts.gstatic.com",
-    "lh3.googleusercontent.com",
-    "upload.wikimedia.org"
+    "cdn.jsdelivr.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com"
   ]
 }

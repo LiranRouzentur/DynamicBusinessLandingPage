@@ -3,10 +3,12 @@ import json
 import pathlib
 import time
 import os
-import sys
+import logging
 from typing import Dict, Any, List, Optional
 from collections import deque
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 class AdaptiveManager:
     """Manages policy hot-reload, tier shifting, and metrics collection"""
@@ -72,11 +74,11 @@ class AdaptiveManager:
         
         if reloaded:
             self._last_reload = now
-            print(json.dumps({
+            logger.info(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "event": "policies_reloaded",
                 "message": "Policy files reloaded"
-            }), file=sys.stderr)
+            }))
     
     def get_limits(self, tier: Optional[str] = None) -> Dict[str, Any]:
         """Get image limits for current or specified tier"""
@@ -130,34 +132,34 @@ class AdaptiveManager:
         # Shift to economy if >50% recent builds have issues
         if current_tier == "default" and (exceeded_count >= 5 or high_latency_count >= 5):
             self._image_limits["current_tier"] = "economy"
-            print(json.dumps({
+            logger.warning(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "event": "tier_shift",
                 "from": "default",
                 "to": "economy",
                 "reason": f"exceeded={exceeded_count}, latency={high_latency_count}"
-            }), file=sys.stderr)
+            }))
             # Write back (read-only in prod, but for dev)
             if self.image_limits_path.exists():
                 try:
                     self.image_limits_path.write_text(json.dumps(self._image_limits, indent=2))
-                except:
+                except Exception:
                     pass
         
         # Shift back to default if metrics improve
         elif current_tier == "economy" and exceeded_count <= 2 and high_latency_count <= 2:
             self._image_limits["current_tier"] = "default"
-            print(json.dumps({
+            logger.info(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "event": "tier_shift",
                 "from": "economy",
                 "to": "default",
                 "reason": "metrics_improved"
-            }), file=sys.stderr)
+            }))
             if self.image_limits_path.exists():
                 try:
                     self.image_limits_path.write_text(json.dumps(self._image_limits, indent=2))
-                except:
+                except Exception:
                     pass
     
     def get_allowed_domains(self) -> List[str]:

@@ -66,7 +66,10 @@ async def get_logo():
 
 @app.on_event("startup")
 async def startup_event():
-    """Log startup diagnostic information"""
+    """Log startup diagnostic information and start background tasks"""
+    import asyncio
+    from landing_api.api.build import cleanup_old_sessions
+    
     logger.info("=" * 60)
     logger.info("BACKEND SERVICE STARTING")
     logger.info("=" * 60)
@@ -76,6 +79,10 @@ async def startup_event():
     logger.info(f"CWD: {os.getcwd()}")
     logger.info(f"Python Path[0]: {sys.path[0]}")
     logger.info("=" * 60)
+    
+    # Start background cleanup task
+    asyncio.create_task(cleanup_old_sessions())
+    logger.info("✓ Background cleanup task started")
 
 
 @app.on_event("shutdown")

@@ -13,6 +13,7 @@ import { useEffect, useState, lazy, Suspense, useRef } from "react";
 import { useBuild } from "../../contexts/BuildContext";
 import { validateIframeContent, type ValidationError } from "../../utils/iframeValidator";
 import { sendErrorsToMCP, type MCPValidationError } from "../../utils/mcpValidator";
+import { logger } from "../../utils/logger";
 
 // Lazy load skeleton for better code splitting
 const LandingPageSkeleton = lazy(() => import("./LandingPageSkeleton"));
@@ -139,7 +140,7 @@ function SiteFrame() {
               }
             } else {
               // MCP fix failed - show errors but proceed with warnings
-              console.warn('[SiteFrame] MCP fix failed:', fixResult.message);
+              logger.warn('[SiteFrame] MCP fix failed:', fixResult.message);
               setValidatedHtml(html); // Show original with warnings
               setValidationState({
                 isValidating: false,
@@ -164,7 +165,7 @@ function SiteFrame() {
       } catch (error) {
         if (cancelled) return;
         
-        console.error('[SiteFrame] Validation error:', error);
+        logger.error('[SiteFrame] Validation error:', error);
         setHasError(true);
         setValidationState(prev => ({
           ...prev,
@@ -264,7 +265,7 @@ function SiteFrame() {
         className="w-full h-full border-0"
         title="Generated Landing Page"
         style={{ minHeight: "100%" }}
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+        sandbox="allow-scripts allow-forms allow-popups"
         onError={() => setHasError(true)}
       />
     </div>

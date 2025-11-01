@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 class OrchestratorAgent(BaseAgent):
     """Orchestrator - Coordinates mapper, generator, and validator agents"""
     
+    # Initializes orchestrator with OpenAI client and creates mapper + generator agent instances.
+    # Temperature=0.3 for deterministic orchestration decisions; loads API key from environment.
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -56,6 +58,8 @@ class OrchestratorAgent(BaseAgent):
         # Note: Validation handled by pre_write_validator (security) and MCP (structure)
         # LLM-based semantic validation removed - was never used
     
+    # Coordinates full build workflow: mapper → generator → iframe + MCP validators (parallel).
+    # Uses retry loop with severity-based decisions and visual feedback refinement; returns HTML + meta.
     async def orchestrate(
         self,
         google_data: Dict[str, Any],
@@ -64,7 +68,6 @@ class OrchestratorAgent(BaseAgent):
         cost_mode: str = "economy",
         asset_budget: int = 3,
         event_callback: Optional[Callable[[str, str], None]] = None,
-        stop_after: Optional[str] = None,  # "mapper", "generator", or "validator" for testing
         session_id: Optional[str] = None  # Session ID for proper artifact storage path
     ) -> Dict[str, Any]:
         """
@@ -77,7 +80,7 @@ class OrchestratorAgent(BaseAgent):
             cost_mode: "economy" (prefer fewer web calls)
             asset_budget: Target number of images (3-6)
             event_callback: Optional callback for progress events
-            stop_after: Optional agent to stop after ("mapper", "generator", "validator") for testing
+            session_id: Session ID for proper artifact storage path
             
         Returns:
             Result dict with bundle, qa_report, orchestration_log, mapper_out
@@ -162,17 +165,6 @@ class OrchestratorAgent(BaseAgent):
                 )
                 raise AgentError(f"Mapper failed: {mapper_err}")
             
-            # If stopping after mapper (for testing)
-            if stop_after == "mapper":
-                self._emit_event(event_callback, "TESTING", "Test mode: stopped after data organization")
-                return {
-                    "success": True,
-                    "test_mode": True,
-                    "stopped_after": "mapper",
-                    "mapper_out": mapper_out,
-                    "orchestration_log": log
-                }
-            
             # Step 3: Generate and Validate Loop
             tamplate: Optional[str] = None
             validator_errors: Optional[list] = None
@@ -180,13 +172,18 @@ class OrchestratorAgent(BaseAgent):
             while attempt <= max_attempts:
                 final_attempt = (attempt == max_attempts)
                 log.append({"step": "generator", "attempt": attempt, "timestamp": self._timestamp()})
-                if attempt > 1:
-                    self._emit_event(event_callback, "GENERATING", "Refining the design — making it even better...")
-                else:
-                    # Create more engaging first attempt message
-                    mapper_data = mapper_out if mapper_out else {}
+                # Dynamic, attempt-specific messages for storytelling
+                mapper_data = mapper_out if mapper_out else {}
+                if attempt == 1:
+                    # First attempt - creative design phase
                     style_keyword = mapper_data.get("design_style_keyword", "modern")
-                    self._emit_event(event_callback, "GENERATING", f"Designing a beautiful {style_keyword} layout with premium components...")
+                    self._emit_event(event_callback, "GENERATING", f"Crafting a stunning {style_keyword} design with premium typography and spacing...")
+                elif attempt == 2:
+                    # Second attempt - refinement based on feedback
+                    self._emit_event(event_callback, "GENERATING", "Polishing the design — perfecting colors, spacing, and visual hierarchy...")
+                else:
+                    # Third+ attempt - final touches
+                    self._emit_event(event_callback, "GENERATING", f"Final touches (attempt {attempt}/{max_attempts}) — ensuring every detail is pixel-perfect...")
                 
                 # Run Generator FIRST - generator will use image URLs from mapper_data
                 # Images will be downloaded AFTER files are written (non-blocking)
@@ -309,7 +306,7 @@ class OrchestratorAgent(BaseAgent):
                 all_pre_validation_errors = []
                 
                 try:
-                    is_valid, structure_errors = validate_generator_output_structure(gen_out)
+                    is_valid, structure_errors = validate_generator_output_structure(gen_out, mapper_out)
                     
                     # Check if generator returned any unresolved QA errors
                     qa_errors_from_gen = gen_out.get("_qa_errors", [])
@@ -359,10 +356,11 @@ class OrchestratorAgent(BaseAgent):
                         # Let orchestrator loop retry with error feedback
                         tamplate = None  # No template since we have no HTML
                         validator_errors = ["Generator returned empty HTML - ensure complete HTML document is generated"]
+                        # Specific message based on empty HTML issue
                         self._emit_event(
                             event_callback,
                             "GENERATING",
-                            "Fixing generation issues..."
+                            f"Regenerating the complete design structure (attempt {attempt + 1}/{max_attempts})..."
                         )
                         attempt += 1
                         continue
@@ -498,6 +496,40 @@ class OrchestratorAgent(BaseAgent):
                         last_fail = workdir / "index_last_fail.html"
                         last_fail.write_text(html_content, encoding="utf-8")
                         
+                        # VISUAL VALIDATION: If we have screenshot and errors, use visual feedback refinement
+                        # This sends screenshot + errors to generator for visual tweaks
+                        if iframe_screenshot and attempt > 1:
+                            logger.info(
+                                f"[Orchestrator] Using visual feedback refinement | "
+                                f"attempt: {attempt}/{max_attempts} | "
+                                f"screenshot_size: {len(iframe_screenshot)} bytes | "
+                                f"errors: {len(all_errors)}"
+                            )
+                            self._emit_event(
+                                event_callback,
+                                "GENERATING",
+                                "Analyzing visual layout with AI — refining design based on screenshot feedback..."
+                            )
+                            try:
+                                # Call visual feedback refinement
+                                gen_out, generator_response_id = await self.generator.run_with_visual_feedback(
+                                    html_content=html_content,
+                                    screenshot_base64=iframe_screenshot,
+                                    validator_errors=all_errors,
+                                    previous_response_id=generator_response_id
+                                )
+                                
+                                # Continue to next iteration with visually refined output
+                                attempt += 1
+                                continue
+                                
+                            except Exception as visual_err:
+                                logger.warning(
+                                    f"[Orchestrator] Visual feedback refinement failed: {visual_err} | "
+                                    f"Falling back to regular retry"
+                                )
+                                # Fall through to regular retry
+                        
                         # Log detailed error breakdown for debugging
                         retry_config = get_retry_config(attempt + 1)
                         logger.info(
@@ -517,11 +549,14 @@ class OrchestratorAgent(BaseAgent):
                         else:
                             severity_msg = f"{len(errors_by_severity['minor'])} minor"
                         
-                        self._emit_event(
-                            event_callback,
-                            "GENERATING",
-                            f"Perfecting the details — fixing {severity_msg} item{'' if len(all_errors) == 1 else 's'}..."
-                        )
+                        # Dynamic retry message based on error types and attempt
+                        retry_messages = [
+                            f"Refining the design — addressing {severity_msg} feedback on layout and assets...",
+                            f"Enhancing details — fixing {severity_msg} items to ensure perfect quality...",
+                            f"Making final adjustments — {severity_msg} optimizations for a flawless result..."
+                        ]
+                        retry_idx = min(attempt - 1, len(retry_messages) - 1)
+                        self._emit_event(event_callback, "GENERATING", retry_messages[retry_idx])
                         attempt += 1
                         continue
                     elif not should_retry:
@@ -556,10 +591,11 @@ class OrchestratorAgent(BaseAgent):
                     if attempt < max_attempts:
                         tamplate = html_content
                         validator_errors = ["MCP validation timed out - retrying generation"]
+                        # More user-friendly timeout message
                         self._emit_event(
                             event_callback,
                             "GENERATING",
-                            f"Validation timeout - retrying (attempt {attempt + 1}/{max_attempts})..."
+                            f"Quality check took longer than expected — regenerating with optimizations..."
                         )
                         attempt += 1
                         continue
@@ -592,6 +628,8 @@ class OrchestratorAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"[Orchestrator] Error closing MCP client: {e}")
     
+    # Ensures Google Place data has required fields (types, photos, reviews) with safe [] defaults.
+    # Prevents downstream errors from missing keys in Google API responses.
     def _normalize_google_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Sanity-check and normalize Google data"""
         # Ensure required fields exist with safe defaults
@@ -603,6 +641,8 @@ class OrchestratorAgent(BaseAgent):
             data["reviews"] = []
         return data
     
+    # Validates mapper output has required fields (business_summary, assats) before proceeding.
+    # Returns False if schema invalid to trigger orchestrator retry logic.
     def _basic_schema_ok(self, mapper_out: Dict[str, Any]) -> bool:
         """Basic schema validation for mapper output"""
         return (
@@ -612,6 +652,8 @@ class OrchestratorAgent(BaseAgent):
             isinstance(mapper_out["assats"], dict)
         )
     
+    # Injects QA report HTML comment with validation results (status, warnings, tier) into index.html.
+    # Non-blocking operation - logs warning if fails; provides traceability of validation history.
     def _inject_qa_report_via_mcp(self, workdir: Path, val_result: Dict[str, Any], mcp_client: MCPClient):
         """Inject QA REPORT comment into index.html via MCP (only side-effect path)"""
         # Create QA REPORT comment - handle missing fields gracefully
@@ -633,11 +675,15 @@ fixed: {json.dumps(warnings)}
             logger.warning(f"[Orchestrator] Failed to inject QA report comment via MCP: {e}")
     
     
+    # Returns current UTC timestamp in ISO 8601 format with 'Z' suffix for QA reports.
+    # Ensures consistent timestamping across all logs and artifact metadata.
     def _timestamp(self) -> str:
         """Get current timestamp in ISO format"""
         from datetime import datetime, timezone
         return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     
+    # Converts validation errors from different sources (pre_write, mcp, iframe) into standardized format.
+    # Adds severity, location, and explicit fix instructions for common errors like TARGET_BLANK_NO_NOOPENER.
     def _format_error_for_generator(self, error_source: str, error_data: any) -> str:
         """
         Standardize error format for consistent generator feedback
@@ -677,6 +723,8 @@ fixed: {json.dumps(warnings)}
             # Fallback for unknown sources
             return str(error_data)
     
+    # Safely calls event callback with phase and message for progress tracking; catches and logs errors.
+    # Prevents build failures from callback issues - event emission is non-blocking.
     def _emit_event(self, callback: Optional[Callable[[str, str], None]], phase: str, message: str):
         """Emit event via callback if provided"""
         if callback:

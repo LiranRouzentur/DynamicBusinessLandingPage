@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """Client for MCP server via HTTP (FastMCP + Starlette)"""
     
+    # Initializes HTTP client for MCP server (port 8003) with separate timeouts (5s write, 60s read).
+    # Workspace_root for info only - server manages its own workspace via env var.
     def __init__(self, workspace_root: Optional[pathlib.Path] = None, 
                  base_url: Optional[str] = None):
         """
@@ -30,6 +32,8 @@ class MCPClient:
         )
         logger.info(f"[MCPClient] Initialized with base_URL: {self.base_url}")
     
+    # Calls MCP tool via HTTP POST to /mcp/tools/{tool_name} with retry logic (3 attempts, 2s delay).
+    # Raises RuntimeError if all retries fail or if HTTP error returned; critical for validation flow.
     def _call_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
         """
         Call MCP tool via HTTP with retry logic
@@ -69,6 +73,8 @@ class MCPClient:
                 raise
     
     # Bundle tools
+    # Writes files to MCP workspace; files is list of {path, content} dicts.
+    # Returns {written: [paths]} listing successfully written files.
     def write_files(self, files: list) -> Dict[str, Any]:
         """
         Write files to workspace.
@@ -95,6 +101,8 @@ class MCPClient:
         return self._call_tool("inject_comment", index_path=index_path, comment=comment)
     
     # QA tools
+    # Validates HTML bundle structure, security (CSP, XSS), images, accessibility, SEO.
+    # Returns {status: PASS/FAIL, violations: [errors], metrics}; critical for quality assurance.
     def validate_static_bundle(self) -> Dict[str, Any]:
         """
         Validate static HTML bundle.

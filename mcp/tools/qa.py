@@ -3,8 +3,11 @@ from bs4 import BeautifulSoup
 import pathlib
 import json
 import time
-import sys
+import logging
 from datetime import datetime, timezone
+from util import emit_telemetry
+
+logger = logging.getLogger(__name__)
 
 class QA:
     def __init__(self, root, util, limits, adaptive_manager=None, cache_root=None):
@@ -17,41 +20,11 @@ class QA:
     def _emit_telemetry(self, tool: str, tree_hash: str, duration_ms: int,
                        memoized: bool, status: str, error: Optional[str] = None):
         """Emit structured telemetry"""
-        telemetry = {
-            "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-            "tool": tool,
-            "tree_hash": tree_hash,
-            "duration_ms": duration_ms,
-            "memoized": memoized,
-            "status": status,
-            "result": "ERROR" if error else "OK",
-            "error": error
-        }
-        print(json.dumps(telemetry), file=sys.stderr)
+        emit_telemetry(tool, tree_hash, duration_ms, memoized, status, error)
     
     def _get_memoized(self, tree_hash: str) -> Optional[Dict[str, Any]]:
-        """Get memoized QA result - DISABLED"""
+        """Get memoized QA result - currently disabled"""
         return None
-        if not cache_file.exists():
-            return None
-        
-        try:
-            data = json.loads(cache_file.read_text(encoding="utf-8"))
-            
-            # Check TTL
-            if self.adaptive_manager:
-                cache_policy = self.adaptive_manager.get_cache_policy()
-                qa_ttl_s = cache_policy.get("qa_ttl_s", 86400)
-            else:
-                qa_ttl_s = 86400
-            
-            age = time.time() - data.get("created_at", 0)
-            if age > qa_ttl_s:
-                return None  # Expired
-            
-            return data
-        except:
-            return None
     
     def _store_memoized(self, tree_hash: str, result: Dict[str, Any]):
         """Store QA result"""
@@ -98,7 +71,7 @@ class QA:
 
         # RELAXED: Just log if index.html missing, validation will continue
         if not (self.root/"index.html").exists():
-            print(f"[QA WARN] index.html not found at {self.root}", file=sys.stderr)
+            logger.warning(f"index.html not found at {self.root}")
             # Return success with warning instead of error
             return {
                 "status": "PASS",
@@ -110,39 +83,10 @@ class QA:
         idx = self.root/"index.html"
         if idx.exists():
             html = idx.read_text(encoding="utf-8", errors="ignore")
-            print(f"[QA DEBUG] Reading HTML from: {idx}", file=sys.stderr)
-            print(f"[QA DEBUG] HTML length: {len(html)}", file=sys.stderr)
-            
             soup = BeautifulSoup(html, "html.parser")
-            # RELAXED: CSP not required
-            # if "Content-Security-Policy" not in html:
-            #     err("SEC.CSP_MISSING","index.html","Add CSP meta/header")
-            # RELAXED: Only warn about target="_blank" without rel, don't fail build
-            # for a in soup.find_all("a", target="_blank"):
-            #     rel_attr = a.get("rel")
-            #     if isinstance(rel_attr, str):
-            #         rel = rel_attr.lower()
-            #     elif isinstance(rel_attr, list):
-            #         rel = " ".join(rel_attr).lower()
-            #     else:
-            #         rel = ""
-            #     if "noopener" not in rel or "noreferrer" not in rel:
-            #         # Just log warning, don't fail
-            #         print(f"[QA WARN] target=_blank without noopener/noreferrer", file=sys.stderr)
-            # RELAXED: Don't check alt text or missing images
-            # for img in soup.find_all("img"):
-            #     if not img.get("alt"): 
-            #         err("A11Y.IMG_ALT","index.html","Provide alt text")
-            
-            # RELAXED: Don't check for missing CSS/JS files
-            # for link in soup.find_all("link", rel="stylesheet"):
-            #     href = link.get("href", "")
-            #     if href and not href.startswith(("http://", "https://", "//")):
-            #         css_path = self.root / href
-            #         if not css_path.exists():
-            #             err("STRUCTURE.MISSING_CSS", f"index.html", f"Stylesheet not found: {href}")
+            # Note: Relaxed validation - CSP, target="_blank", alt text, and CSS checks disabled
 
-        # RELAXED: Don't require assets/images directory
+        # Note: assets/images directory is optional
         assets = self.root/"assets"/"images"
         if assets.exists():
             total_mb = sum(fp.stat().st_size for fp in assets.rglob("*") if fp.is_file())/1024/1024
@@ -161,18 +105,20 @@ class QA:
         status = "PASS" if not any(v["severity"]=="error" for v in violations) else "FAIL"
         duration_ms = int((time.time() - start) * 1000)
         
+        # Merge all metrics into one dict
+        metrics.update({
+            "tree_hash": tree_hash,
+            "memoized": False,
+            "duration_ms": duration_ms
+        })
+        
         result = {
             "status": status,
             "violations": violations,
             "metrics": metrics,
             "suggestions": {},
             "tree_hash": tree_hash,
-            "memoized": False,
-            "metrics": {
-                "tree_hash": tree_hash,
-                "memoized": False,
-                "duration_ms": duration_ms
-            }
+            "memoized": False
         }
         
         # Store for memoization

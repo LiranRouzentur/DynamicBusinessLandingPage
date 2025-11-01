@@ -30,20 +30,11 @@ from adaptive_manager import AdaptiveManager
 from fixer import fix_html_errors
 from cors_fixer import rewrite_html as cors_rewrite_html
 
-# Configure logging - console only by default, file logging optional
-log_to_file = os.getenv("LOG_TO_FILE", "false").lower() == "true"
-handlers = [logging.StreamHandler(sys.stderr)]
-
-if log_to_file:
-    log_dir = pathlib.Path(__file__).resolve().parent.parent.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "mcp.log"
-    handlers.append(logging.FileHandler(log_file, mode='a', encoding='utf-8'))
-
+# Configure logging - console only
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s - %(name)s - %(message)s',
-    handlers=handlers
+    handlers=[logging.StreamHandler(sys.stderr)]
 )
 
 # Force immediate flush on all handlers for better debugging
@@ -51,10 +42,7 @@ for handler in logging.root.handlers:
     handler.flush()
 
 logger = logging.getLogger(__name__)
-if log_to_file:
-    logger.info(f"[MCP] Logging to file: {log_file}")
-else:
-    logger.info("[MCP] Logging to console only")
+logger.info("[MCP] Logging to console only")
 
 # Initialize FastMCP server
 mcp = FastMCP("landing-page-mcp")
@@ -66,6 +54,8 @@ _net: Optional[Net] = None
 _util: Optional[Util] = None
 
 
+# Gets workspace root directory from WORKSPACE_ROOT env var (supports per-session workspaces).
+# Defaults to mcp/storage/workspace; creates directory if missing; critical for file operations.
 def _get_workspace_root() -> pathlib.Path:
     """Get workspace root - supports per-session workspaces via env var"""
     default_workspace = pathlib.Path(__file__).parent.parent / "storage" / "workspace"
@@ -81,6 +71,8 @@ def _get_cache_root() -> pathlib.Path:
     return root
 
 
+# Initializes all MCP tool instances (Bundle, QA, Net, Util) with workspace and policy configs.
+# Loads image limits, CSP template, domain allowlist; sets up adaptive manager for runtime policy updates.
 def _init_tools():
     """Initialize tool instances"""
     global _bundle, _qa, _net, _util
@@ -124,6 +116,8 @@ def _init_tools():
 # Internal Tool Functions (shared by REST and FastMCP)
 # =====================================================
 
+# Internal: writes files to workspace via Bundle tool; shared by REST and FastMCP endpoints.
+# Returns {written: [paths]} listing successfully written files; validates tool initialization.
 def _write_files_impl(files: list[dict[str, str]]) -> dict[str, Any]:
     """Internal implementation of write_files"""
     if _bundle is None:
@@ -138,6 +132,8 @@ def _inject_comment_impl(index_path: str, comment: str) -> dict[str, Any]:
     return _bundle.inject_comment({"indexPath": index_path, "comment": comment})
 
 
+# Internal: validates HTML bundle structure, security, images, SEO via QA tool.
+# Returns {status: PASS/FAIL, violations, metrics}; enforces quality gates before deployment.
 def _validate_static_bundle_impl() -> dict[str, Any]:
     """Internal implementation of validate_static_bundle"""
     if _qa is None:
@@ -159,6 +155,8 @@ def _hash_directory_impl() -> dict[str, Any]:
     return _util.hash_dir({})
 
 
+# Internal: fixes HTML validation errors automatically using fixer tool; optional visual validation with screenshot.
+# Returns {success, fixed_html, fixes_applied, remaining_errors}; uses AI for complex fixes when screenshot provided.
 def _validator_errors_impl(html: str, errors: list[dict[str, Any]], screenshot_base64: Optional[str] = None) -> dict[str, Any]:
     """Internal implementation of validator_errors with optional screenshot for visual validation"""
     try:
@@ -301,6 +299,8 @@ def _collect_findings_impl(run_id: str) -> dict[str, Any]:
 # MCP Tools - FastMCP Decorators
 # =====================================================
 
+# FastMCP tool: writes files to workspace from agents; files is list of {path, content} dicts.
+# Returns {written: [paths]}; exposed via both MCP protocol and REST API at /mcp/tools/write_files.
 @mcp.tool()
 def write_files(files: list[dict[str, str]]) -> dict[str, Any]:
     """
@@ -330,6 +330,8 @@ def inject_comment(index_path: str, comment: str) -> dict[str, Any]:
     return _inject_comment_impl(index_path, comment)
 
 
+# FastMCP tool: validates HTML bundle for security, structure, accessibility, SEO compliance.
+# Returns {passed, violations, metrics}; critical quality gate before serving pages to users.
 @mcp.tool()
 def validate_static_bundle() -> dict[str, Any]:
     """
@@ -539,6 +541,8 @@ async def handle_collect_findings(request: Request):
         return JSONResponse({"error": str(e), "ok": False}, status_code=500)
 
 
+# Health check endpoint: returns service status and available tools list.
+# Used by agents/backend to verify MCP server availability before validation calls.
 async def health_check(request: Request):
     """Health check endpoint"""
     return JSONResponse({
@@ -562,6 +566,8 @@ async def health_check(request: Request):
 # Starlette Application
 # =====================================================
 
+# Lifespan context manager: initializes tools on startup, logs readiness; handles graceful shutdown.
+# Ensures all MCP tools (Bundle, QA, Net, Util) are configured before accepting requests.
 @asynccontextmanager
 async def lifespan(app):
     """Lifespan context manager for app startup/shutdown"""
@@ -590,9 +596,21 @@ app = Starlette(
     middleware=[
         Middleware(
             CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"]
+            allow_origins=[
+                "http://localhost:8000",    # Backend API
+                "http://127.0.0.1:8000",    # Backend API (alternative)
+                "http://localhost:8002",    # Agents service
+                "http://127.0.0.1:8002",    # Agents service (alternative)
+                "http://localhost:5173",    # Frontend dev server
+                "http://127.0.0.1:5173",    # Frontend dev server (alternative)
+                # Add production URLs via environment variable
+                os.getenv("BACKEND_URL", ""),
+                os.getenv("AGENTS_URL", ""),
+                os.getenv("FRONTEND_URL", ""),
+            ],
+            allow_credentials=True,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "X-API-Key", "Authorization"]
         )
     ],
     lifespan=lifespan

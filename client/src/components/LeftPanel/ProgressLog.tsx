@@ -14,10 +14,7 @@ interface ProgressLogProps {
 }
 
 function ProgressLog({ events }: ProgressLogProps) {
-  const endRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const prevEventsLengthRef = useRef(0);
-  const userHasScrolledRef = useRef(false);
 
   // Group events by timestamp (same second) and content type
   const groupedEvents = useMemo(() => {
@@ -66,42 +63,7 @@ function ProgressLog({ events }: ProgressLogProps) {
     return groups.reverse();
   }, [events]);
 
-  // Track user scroll behavior
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10; // 10px threshold
-      
-      // User has scrolled if not at bottom
-      userHasScrolledRef.current = !isAtBottom;
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  // DISABLED: No auto-scroll - user controls scroll position completely
-  // Auto-scroll only if user hasn't manually scrolled up and new events arrive
-  // useEffect(() => {
-  //   const container = scrollContainerRef.current;
-  //   if (!container) return;
-
-  //   // Only auto-scroll if new events arrived AND user is at bottom
-  //   if (events.length > prevEventsLengthRef.current && !userHasScrolledRef.current) {
-  //     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  //   }
-
-  //   prevEventsLengthRef.current = events.length;
-  // }, [events]);
-
-  const getLatestEvent = () => {
-    return events.length > 0 ? events[0] : null;
-  };
-
-  const latestEvent = getLatestEvent();
+  const latestEvent = events.length > 0 ? events[0] : null;
   const phaseConfig = latestEvent
     ? PHASE_CONFIG[latestEvent.phase] || PHASE_CONFIG.IDLE
     : null;
@@ -187,7 +149,6 @@ function ProgressLog({ events }: ProgressLogProps) {
               </div>
             );
           })}
-          <div ref={endRef} />
         </div>
       )}
     </div>

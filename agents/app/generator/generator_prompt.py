@@ -184,8 +184,19 @@ HTML requirements:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src https://*.googleusercontent.com https://images.unsplash.com https://images.pexels.com https://*.pixabay.com data: blob: 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com data:;">
+    content="default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; img-src https://*.googleusercontent.com https://images.unsplash.com https://images.pexels.com https://*.pixabay.com https://upload.wikimedia.org data: blob: 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com data:;">
   <title>[Business Name]</title>
+  
+  <!-- CRITICAL CSP NOTE:
+    Image sources are STRICTLY LIMITED to:
+    - Google API images (*.googleusercontent.com) - includes Google Places business photos
+    - Free stock images: images.unsplash.com, images.pexels.com, *.pixabay.com
+    - Wikimedia Commons: upload.wikimedia.org
+    - Data URIs and blob URIs
+    
+    Business website domains are NOT included to avoid CORS issues with logos and external assets.
+    DO NOT attempt to load images from business websites - use only the pre-validated URLs from mapper_data.
+  -->
   
   <!-- CDN stylesheets -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -195,9 +206,9 @@ HTML requirements:
   <!-- Style Token: [style keyword] -->
   <style>
     /* IFRAME hardening and rhythm */
-    html, body { overflow-x: hidden; width: 100%; max-width: 100%; }
+    html, body { overflow-x: hidden; width: 100%; max-width: 100%; margin: 0; padding: 0; }
     * { box-sizing: border-box; }
-    body { visibility: hidden; }
+    body { visibility: hidden; padding: 1rem; min-height: 100vh; }
 
     /* Design system tokens — must vary per business */
     :root{
@@ -226,7 +237,7 @@ HTML requirements:
       --line: rgba(255,255,255,.08);
     }
 
-    body { background: var(--bg); color: var(--fg); font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+    body { background: var(--bg); color: var(--fg); font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji"; padding: 1rem; }
     h1 { font-size: var(--t-xxl); letter-spacing: -0.02em; line-height: 1.05; }
     h2 { font-size: var(--t-xl);  letter-spacing: -0.01em; }
     h3 { font-size: var(--t-lg); }
@@ -291,7 +302,7 @@ HTML requirements:
 Select 5–7 sections based on business type. Swap order and treatments to avoid repetition. Replace any CTA with neutral, editorial content.
 
 Examples:
-- Identity strip: logo, name, tagline, credentials (no “Contact/Book” buttons).
+- Identity strip: name, tagline, credentials (no logo, no "Contact/Book" buttons).
 - Hero narrative: headline + subhead + brand imagery or abstract motif.
 - Story/About: origin, philosophy, craft.
 - Expertise/Services overview: descriptive tiles without “Get started” buttons.
@@ -375,9 +386,16 @@ Required:
 
 ## 11) IFRAME Viewport Compatibility
 
+**CRITICAL: All generated HTML MUST have body padding for proper iframe display:**
+- Body element MUST include `padding: 1rem;` (minimum)
+- This prevents content from touching iframe edges
+- Already included in the base HTML template — DO NOT REMOVE
+
+**Other Requirements:**
 - Keep content within 100vw; fluid typography via clamp.
 - Images use max-width:100%; height:auto.
 - Panels and grids avoid overflow at narrow widths.
+- Ensure no negative margins that would break padding.
 
 ## 12) Iterative Fix Mode
 
@@ -386,6 +404,21 @@ If validator_errors is present:
 - Preserve design intent and previously fixed items.
 - Keep output as a single self-contained HTML file.
 - In meta.fix_rationale, enumerate each error and the change made.
+
+## 13) Visual Feedback Mode
+
+If a screenshot is provided alongside validator_errors:
+- You are seeing the ACTUAL rendered page - use this to validate your changes
+- Analyze the screenshot for visual issues:
+  * Spacing and padding (ensure proper breathing room between sections)
+  * Color contrast (verify text is readable on all backgrounds)
+  * Layout alignment (check sections align properly)
+  * Image loading (verify images are visible, not broken/CORS-blocked)
+  * Typography hierarchy (ensure headings stand out, body text is comfortable)
+  * Responsive behavior (check elements don't overflow or break layout)
+- Fix issues based on what you SEE in the screenshot, not just the errors list
+- Preserve the overall design aesthetic while addressing specific issues
+- Return the complete refined HTML
 
 ## important!
 
@@ -406,12 +439,54 @@ Return JSON:
 
 Note: You do NOT need to include a meta field. Only return the html field.
 
-## Assets
+## Assets - CRITICAL DOMAIN RESTRICTIONS
 
-Use HTTPS images only.
+**MANDATORY: You MUST use ONLY the assets provided in `mapper_data`:**
 
-If no valid brand images given, select tasteful stock images based on business category from the provided stock_images_urls.
+1. **NO LOGO COMPONENT**: 
+   - DO NOT include logo images in the HTML template
+   - DO NOT use `mapper_data.assats.logo_url` even if provided
+   - Logo URLs from business websites are likely to be CORS-blocked
+   - Use business name as text instead (styled with brand colors and typography)
 
+2. **Business Images**: Use `mapper_data.assats.business_images_urls` EXACTLY as provided
+   - These are pre-validated Google Places images (from Google API)
+   - DO NOT substitute with images from business websites
+
+3. **Stock Images**: Use `mapper_data.assats.stock_images_urls` EXACTLY as provided
+   - These are pre-validated from Unsplash/Pexels/Pixabay
+   - DO NOT fetch from unsplash.com/photos/ page URLs - only use the provided CDN URLs
+
+**CSP ENFORCEMENT - ALLOWED IMAGE DOMAINS ONLY:**
+The Content Security Policy ONLY allows images from these domains:
+- ✅ `*.googleusercontent.com` (Google Places/API images)
+- ✅ `images.unsplash.com` (Unsplash CDN)
+- ✅ `images.pexels.com` (Pexels CDN)
+- ✅ `*.pixabay.com` (Pixabay CDN)
+- ✅ `upload.wikimedia.org` (Wikimedia Commons)
+- ✅ `data:` URIs (inline images)
+- ❌ **ANY OTHER DOMAIN WILL BE BLOCKED** (including business websites to avoid CORS)
+
+**CRITICAL**: Do NOT fetch images from:
+- ❌ Business websites (will be CORS-blocked)
+- ❌ Page URLs (e.g., unsplash.com/photos/...)  
+- ❌ Any domain not in the above allowlist
+
+If the mapper provided empty/null arrays, use abstract gradients or color fields instead of fetching external images.
+
+**CSS @import RULES:**
+- ALL @import statements (e.g., Google Fonts) MUST be at the very top of the <style> block
+- They must appear BEFORE any other CSS rules
+- Example:
+```css
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+  
+  /* IFRAME hardening and rhythm */
+  html, body { overflow-x: hidden; ... }
+  ...
+</style>
+```
 
 ## Output Contract
 
@@ -421,13 +496,6 @@ Return JSON:
 }
 
 Note: You do NOT need to include a meta field. Only return the html field.
-
-## Assets
-
-Use HTTPS images only.
-
-If no valid brand images given, select tasteful stock images based on business category from the provided stock_images_urls.
-
 
 If any check fails during self-check, silently fix and re-emit final JSON.
 

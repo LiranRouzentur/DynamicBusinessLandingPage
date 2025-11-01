@@ -13,11 +13,16 @@ logger = logging.getLogger(__name__)
 
 class ArtifactStore:
     """Stores only generated HTML in /artifacts/{sessionId}/index.html (optionally meta.json)."""
+    
+    # Initializes artifact store with base path from settings; creates directory if missing.
+    # All HTML outputs stored as backend/artifacts/{session_id}/index.html for serving.
     def __init__(self):
         self.base_path = Path(settings.asset_store).resolve()
         self.base_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"Using path: {self.base_path}")
 
+    # Saves HTML to session directory (backend/artifacts/{session_id}/index.html); optionally saves meta.json.
+    # Creates directory if missing; returns path to session directory for reference.
     def save_html(self, session_id: str, html: str, meta: Optional[dict] = None) -> str:
         """Save the single HTML output (and meta if provided)."""
         session_path = self.base_path / session_id

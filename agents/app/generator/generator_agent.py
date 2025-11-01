@@ -26,6 +26,8 @@ EMERGENCY_FALLBACK = [
 ]
 
 
+# Computes stable deterministic seed from place_id + primary_type for consistent design generation.
+# Same business always gets same seed → same visual design (grid, colors, typography, animations).
 def design_seed(google_data: Dict[str, Any]) -> int:
     """
     Compute a stable design seed from business identifiers.
@@ -45,6 +47,8 @@ def design_seed(google_data: Dict[str, Any]) -> int:
     return int(seed_hex, 16)
 
 
+# Maps seed to controlled design parameter ranges (grid width, radius, shadows, palette, typography, animations).
+# Returns dict of deterministic design values that drive visual uniqueness across businesses.
 def design_knobs(seed: int) -> Dict[str, int]:
     """
     Map seed to controlled design parameter ranges.
@@ -69,6 +73,8 @@ def design_knobs(seed: int) -> Dict[str, int]:
     }
 
 
+# Fetches high-res stock images from Unsplash API based on search query (e.g., "pizza restaurant interior").
+# Returns list of image URLs with 1600px width; falls back to emergency images if API fails.
 async def fetch_stock_images(query: str, count: int = 3) -> List[str]:
     """
     Fetch stock images from Unsplash API based on search query.
@@ -122,6 +128,8 @@ async def fetch_stock_images(query: str, count: int = 3) -> List[str]:
         return EMERGENCY_FALLBACK[:count]
 
 
+# Converts QA error codes into human-readable fix instructions for the generator.
+# Provides explicit guidance like "Add Google Fonts link" or "Remove visibility:hidden from body".
 def explain_qa_error(error_code: str) -> str:
     """
     Convert QA error code to human-readable fix instruction.
@@ -159,6 +167,8 @@ def explain_qa_error(error_code: str) -> str:
     return error_explanations.get(error_code, f"Fix quality gate issue: {error_code}")
 
 
+# Runs quality gates on HTML: checks sections, h1, fonts, viewport, CSS variables, CDNs, images, forms.
+# Returns list of error codes (empty if passes); enforces single-file, CTA-free requirements.
 def qa_html_css(index_html: str) -> List[str]:
     """
     Run quality gates on generated HTML/CSS with enhanced checks for broken designs
@@ -257,6 +267,8 @@ def qa_html_css(index_html: str) -> List[str]:
     return errs
 
 
+# Maps Google Place types to better Unsplash search terms (e.g., "pizza_restaurant" → "pizza restaurant interior").
+# Returns optimized search query for stock image API to get relevant business imagery.
 def build_search_query(place_types: List[str], business_name: str = "") -> str:
     """
     Build a search query for stock images based on business type.
@@ -310,12 +322,80 @@ def build_search_query(place_types: List[str], business_name: str = "") -> str:
 class GeneratorAgent(BaseAgent):
     """Generator agent - produces static site files with QA/validation loop"""
     
+    # Initializes generator with OpenAI client and optimal temperature (0.7 empirically tested).
+    # No internal retries - orchestrator handles all retry logic to prevent retry explosion.
     def __init__(self, client, model: str = "gpt-4.1", temperature: float = 0.7):
         super().__init__(client, model, temperature, agent_name="Generator")
         self.default_temperature = temperature  # Store default for retries
         # Note: 0.7 is optimal based on empirical testing (matches ChatGPT quality)
         # No max_retries - removed internal QA loop, only retry on schema validation errors
     
+    # Refines HTML using screenshot + errors via Responses API multimodal input (text + PNG image).
+    # AI analyzes rendered page visually and fixes spacing, contrast, alignment, typography; returns (output, response_id).
+    async def run_with_visual_feedback(
+        self,
+        html_content: str,
+        screenshot_base64: str,
+        validator_errors: List[str],
+        previous_response_id: Optional[str] = None
+    ) -> tuple[Dict[str, Any], Optional[str]]:
+        """
+        Refine HTML based on visual screenshot and validation errors.
+        Uses Responses API with multimodal input (text + image).
+        
+        Args:
+            html_content: Current HTML to refine
+            screenshot_base64: Base64-encoded PNG screenshot
+            validator_errors: List of validation errors
+            previous_response_id: Previous response ID for stateful context
+            
+        Returns:
+            Tuple of (refined output dict, new response_id)
+        """
+        logger.info(
+            f"[Generator] Running visual feedback refinement | "
+            f"screenshot_size: {len(screenshot_base64)} bytes | "
+            f"errors: {len(validator_errors)} | "
+            f"stateful: {bool(previous_response_id)}"
+        )
+        
+        # Build multimodal prompt
+        visual_prompt = (
+            f"Analyze the screenshot of the rendered page and fix the following issues:\n\n"
+            f"VALIDATION ERRORS:\n" + "\n".join(f"- {err}" for err in validator_errors) + "\n\n"
+            f"Focus on:\n"
+            f"1. Visual hierarchy and spacing (ensure proper rhythm and breathing room)\n"
+            f"2. Color contrast and readability (check text is readable on backgrounds)\n"
+            f"3. Layout alignment (ensure sections are properly aligned)\n"
+            f"4. Image loading and display (verify images are visible and properly sized)\n"
+            f"5. Typography and line-height (ensure text is comfortable to read)\n\n"
+            f"Return the COMPLETE refined HTML in the same JSON format."
+        )
+        
+        # Call Responses API with image
+        result, response_id = await self._call_responses_api(
+            system_prompt=GENERATOR_SYSTEM_PROMPT,
+            user_message={
+                "content": [
+                    {"type": "input_text", "text": visual_prompt},
+                    {"type": "input_image", "image_url": f"data:image/png;base64,{screenshot_base64}"}
+                ],
+                "tamplate": html_content,
+                "validator_errors": validator_errors
+            },
+            response_schema=GENERATOR_RESPONSE_SCHEMA,
+            temperature=0.2,  # Lower temperature for refinements
+            max_tokens=16000,
+            previous_response_id=previous_response_id,
+            is_retry=True
+        )
+        
+        # Validate and return
+        validated = GeneratorOutput.model_validate(result)
+        return validated.model_dump(), response_id
+    
+    # Adds stock image URLs to mapper_data if business images are insufficient (< 2 HTTPS images).
+    # Fetches from Unsplash based on place types; combines business + stock images for variety.
     async def _enhance_with_stock_images(self, mapper_data: Dict[str, Any], google_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Add stock-image URLs to mapper_data by fetching from Unsplash API if business images are missing.
@@ -366,6 +446,8 @@ class GeneratorAgent(BaseAgent):
         
         return enhanced
     
+    # Generates complete single-file HTML landing page with Bootstrap, AOS, Font Awesome, custom CSS/JS.
+    # Uses design seed for uniqueness, fetches stock images if needed, runs QA checks; returns {html, meta, _qa_errors}.
     async def run(
         self,
         google_data: Dict[str, Any],

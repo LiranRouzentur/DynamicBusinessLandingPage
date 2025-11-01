@@ -21,13 +21,7 @@ export function BuildProvider({ children }: { children: ReactNode }) {
   const handleSetSessionId = useCallback((id: string | null) => {
     setSessionId(id);
     // Reset ready state when session changes
-    if (id !== sessionId) {
-      setIsReady(false);
-    }
-  }, [sessionId]);
-
-  const handleSetIsReady = useCallback((ready: boolean) => {
-    setIsReady(ready);
+    setIsReady(false);
   }, []);
 
   return (
@@ -36,7 +30,7 @@ export function BuildProvider({ children }: { children: ReactNode }) {
         sessionId,
         isReady,
         setSessionId: handleSetSessionId,
-        setIsReady: handleSetIsReady,
+        setIsReady,
       }}
     >
       {children}

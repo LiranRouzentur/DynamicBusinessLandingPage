@@ -3,6 +3,8 @@
  * Sends validation errors to MCP validator_errors endpoint for automatic fixing
  */
 
+import { logger } from "./logger";
+
 export interface MCPValidationError {
   id: string;
   severity: 'error' | 'warning';
@@ -53,7 +55,7 @@ export async function sendErrorsToMCP(
     const result = await response.json() as MCPFixResponse;
     return result;
   } catch (error) {
-    console.error('[MCP Validator] Failed to send errors to MCP:', error);
+    logger.error('[MCP Validator] Failed to send errors to MCP:', error);
     return {
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error',

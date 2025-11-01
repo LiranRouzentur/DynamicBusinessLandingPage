@@ -25,6 +25,8 @@ class GoogleFetcher:
     Returns data in the format expected by the orchestrator.
     """
     
+    # Initializes Google Places API client with API key from settings; warns if key missing.
+    # Creates persistent async HTTP client for efficient API calls with 20s timeout.
     def __init__(self):
         if not settings.google_maps_api_key:
             logger.warning("GOOGLE_MAPS_API_KEY not set in .env file")
@@ -198,6 +200,8 @@ class GoogleFetcher:
         
         return out
     
+    # Fetches complete place data from Google Places API v1 with photos, reviews, hours, ratings.
+    # Returns normalized dict with business_summary fields; handles name extraction bugs (displayName vs name).
     async def fetch_place(self, place_id: str) -> Dict[str, Any]:
         """
         Fetch complete place data from Google Places API v1.

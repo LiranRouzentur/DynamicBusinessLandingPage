@@ -1,7 +1,8 @@
 """Build API endpoint - refactored for better maintainability"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from landing_api.models.schemas import BuildRequest, BuildResponse
 from landing_api.models.errors import ApplicationError, ErrorCode
+from landing_api.core.auth import verify_api_key
 from landing_api.core.google_fetcher import google_fetcher
 from landing_api.core.artifact_store import artifact_store
 from landing_api.core.state_machine import BuildState, BuildPhase
@@ -16,6 +17,32 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
 # --- New pipeline-aligned error and fetch helpers ---
+# Ensures business name is not a place_id or empty string; returns "Business" if invalid.
+# Prevents display of technical IDs (ChIJ..., places/...) in user-facing content.
+def _sanitize_business_name(name: Optional[str]) -> str:
+    """
+    Ensure business name is not a place_id or empty string.
+    
+    Args:
+        name: Business name from API or data
+        
+    Returns:
+        Sanitized business name, defaults to "Business" if invalid
+    """
+    if not name or not isinstance(name, str):
+        return "Business"
+    
+    name = name.strip()
+    
+    # Check if name looks like a place_id
+    if not name or name.startswith("places/") or name.startswith("ChIJ"):
+        return "Business"
+    
+    return name
+
+
+# Fetches place data from Google Places API and logs progress to state machine.
+# Sanitizes business name and emits user-friendly events; returns None if fetch fails.
 async def _fetch_place_data(place_id: str, state) -> dict:
     """Fetch place data from Google Places API and log progress to state."""
     from landing_api.core.google_fetcher import google_fetcher
@@ -23,29 +50,35 @@ async def _fetch_place_data(place_id: str, state) -> dict:
     state.log_event(BuildPhase.FETCHING, "Discovering your business details...")
     try:
         place_data = await google_fetcher.fetch_place(place_id)
-        business_name = place_data.get("name", "Business")
-        # Ensure we never show place_id - if name looks like a place_id, use fallback
-        if not business_name or business_name.startswith("places/") or business_name.startswith("ChIJ"):
-            business_name = "Business"
+        business_name = _sanitize_business_name(place_data.get("name"))
         state.log_event(BuildPhase.FETCHING, f"✓ Found {business_name} — gathering all the details")
         return place_data
     except Exception as e:
-        _handle_error(state, e, is_application_error=isinstance(e, ApplicationError))
+        _handle_error(state, e)
         return None
 
-def _handle_error(state, error, is_application_error=False):
+# Formats and logs build errors to state machine; distinguishes ApplicationError with hints from generic exceptions.
+# Updates state metadata with error info and marks build as failed.
+def _handle_error(state, error):
+    """Handle build errors and log them to state"""
     logger.error(f"Build error: {repr(error)}")
-    error_msg = ""
-    if is_application_error and hasattr(error, "message"):
-        error_msg += f"✗ {error.message}"
-        if getattr(error, "hint", None):
+    
+    # Format error message based on error type
+    if isinstance(error, ApplicationError):
+        error_msg = f"✗ {error.message}"
+        if error.hint:
             error_msg += f" {error.hint}"
+        error_info = error.model_dump()
     else:
         error_msg = "✗ An error occurred. Please try again."
+        error_info = {
+            "message": str(error),
+            "type": type(error).__name__,
+            "retryable": True
+        }
+    
     state.log_event(BuildPhase.ERROR, error_msg)
     state.metadata["success"] = False
-    # Compatible with ApplicationError and regular Exception
-    error_info = error.model_dump() if hasattr(error, "model_dump") else {"message": str(error), "type": type(error).__name__, "retryable": True}
     state.metadata["error"] = error_info
 
 
@@ -60,6 +93,8 @@ session_store = {}
 # Helper Functions
 # ============================================================================
 
+# Returns default rendering preferences (language, direction, CDN allowance, review limits).
+# Used when client doesn't provide render_prefs in build request.
 def _get_default_render_prefs() -> Dict[str, Any]:
     """Get default rendering preferences"""
     return {
@@ -70,6 +105,8 @@ def _get_default_render_prefs() -> Dict[str, Any]:
     }
 
 
+# Calculates data availability flags (has_photos, has_reviews, has_hours, has_site) from place data.
+# Helps agents adapt generation strategy based on available content richness.
 def _calculate_data_richness(place_data: Dict[str, Any]) -> Dict[str, bool]:
     """Calculate data richness flags from place data"""
     status = place_data.get("status", {})
@@ -81,6 +118,8 @@ def _calculate_data_richness(place_data: Dict[str, Any]) -> Dict[str, bool]:
     }
 
 
+# Validates bundle contains non-empty HTML string; raises ApplicationError if missing/invalid.
+# Critical validation before file I/O to ensure output meets requirements.
 def _validate_html(bundle: Dict[str, Any], session_id: str) -> None:
     """Validate the bundle contains the HTML output string."""
     if "html" not in bundle or not isinstance(bundle["html"], str) or not bundle["html"].strip():
@@ -92,6 +131,8 @@ def _validate_html(bundle: Dict[str, Any], session_id: str) -> None:
             hint="The generated HTML is missing. Please report this issue."
         )
 
+# Validates and saves inline HTML bundle to artifact store; logs progress events.
+# Emits user-friendly messages ("Design complete", "Polishing") and handles storage errors.
 async def _process_bundle(
     session_id: str,
     bundle: Dict[str, Any],
@@ -113,6 +154,8 @@ async def _process_bundle(
             hint="Storage issue encountered. Please try again."
         )
 
+# Invokes agents service to generate landing page HTML/meta; logs progress and handles errors.
+# Calculates data richness and category before sending; returns agent result or None if failed.
 async def _call_ai_agents(session_id: str, place_data: dict, render_prefs: dict, state) -> dict:
     """Invoke agent service to generate landing page HTML/meta. Logs progress and handles errors."""
     try:
@@ -141,7 +184,7 @@ async def _call_ai_agents(session_id: str, place_data: dict, render_prefs: dict,
         state.log_event(BuildPhase.GENERATING, "✓ Design elements coming together beautifully")
         return result
     except Exception as e:
-        _handle_error(state, e, is_application_error=isinstance(e, ApplicationError))
+        _handle_error(state, e)
         return None
 
 
@@ -149,6 +192,8 @@ async def _call_ai_agents(session_id: str, place_data: dict, render_prefs: dict,
 # Main Build Logic
 # ============================================================================
 
+# Main build workflow: fetches place data → calls AI agents → processes bundle → emits success.
+# Updates state machine throughout; creates storytelling progress messages for user experience.
 async def _run_build(session_id: str, place_id: str, render_prefs: dict) -> None:
     """Main build workflow"""
     logger.info(f"[BUILD START] Session {session_id}, place_id: {place_id}")
@@ -166,10 +211,7 @@ async def _run_build(session_id: str, place_id: str, render_prefs: dict) -> None
             return
         
         # Create engaging opening narrative based on business info
-        business_name = place_data.get("name", "your business")
-        # Ensure we never show place_id - if name looks like a place_id, use fallback
-        if not business_name or business_name.startswith("places/") or business_name.startswith("ChIJ"):
-            business_name = "your business"
+        business_name = _sanitize_business_name(place_data.get("name"))
         
         business_type = place_data.get("types", ["establishment"])[0] if place_data.get("types") else "business"
         category = business_type.replace("_", " ").title()
@@ -242,18 +284,14 @@ async def _run_build(session_id: str, place_id: str, render_prefs: dict) -> None
         logger.info(f"Build completed successfully for session {session_id}")
         
     except ApplicationError as e:
-        _handle_error(state, e, is_application_error=True)
+        _handle_error(state, e)
     except Exception as e:
         logger.exception("Unexpected error in build")
-        _handle_error(state, e, is_application_error=False)
-    finally:
-        # Ensure httpx client is properly closed
-        try:
-            await google_fetcher.close()
-        except Exception as cleanup_err:
-            logger.warning(f"Error closing httpx client: {cleanup_err}")
+        _handle_error(state, e)
 
 
+# Sync wrapper for background task; runs async build in new event loop via asyncio.run().
+# Uses print() with flush for reliable logging in background threads; handles event loop lifecycle.
 def _run_build_sync(session_id: str, place_id: str, render_prefs: dict) -> None:
     """Sync wrapper for background task"""
     # Use print() with flush to bypass logging issues in background tasks
@@ -273,23 +311,10 @@ def _run_build_sync(session_id: str, place_id: str, render_prefs: dict) -> None:
     except Exception as e:
         print(f"[BACKGROUND TASK] ✗ ERROR: {e}", flush=True)
         logger.error(f"Sync wrapper error: {e}", exc_info=True)
-        # Ensure httpx client is closed even on error
-        try:
-            # Close httpx client if it exists
-            if hasattr(google_fetcher, '_client') and google_fetcher._client:
-                # Try to close in a new event loop if needed
-                cleanup_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(cleanup_loop)
-                try:
-                    cleanup_loop.run_until_complete(google_fetcher.close())
-                except Exception:
-                    pass  # Ignore cleanup errors
-                finally:
-                    cleanup_loop.close()
-        except Exception:
-            pass  # Ignore cleanup errors
 
 
+# Background task: periodically cleans up terminal sessions older than 1 hour every 5 minutes.
+# Prevents memory leaks from accumulated session state; runs forever until service shutdown.
 async def cleanup_old_sessions() -> None:
     """Periodically clean up terminal sessions older than 1 hour"""
     import asyncio
@@ -314,6 +339,8 @@ async def cleanup_old_sessions() -> None:
             await asyncio.sleep(300)  # Wait before retrying on error
 
 
+# Cleans up artifact directories older than 1 hour to prevent disk space buildup.
+# Removes entire session directories from artifacts path; logs cleanup count.
 def _cleanup_old_artifacts() -> None:
     """Clean up artifacts older than 1 hour"""
     artifacts_path = Path(settings.asset_store).resolve()
@@ -345,10 +372,13 @@ def _cleanup_old_artifacts() -> None:
 # API Endpoint
 # ============================================================================
 
+# POST /api/build: starts new build for place_id (no caching - always fresh generation).
+# Creates session, stores state, starts background task; returns 202 Accepted with session_id for SSE polling.
 @router.post("/build", response_model=BuildResponse, status_code=202)
 async def start_build(
     request: BuildRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
 ) -> BuildResponse:
     """
     Start a new build for a place_id.

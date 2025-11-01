@@ -1,7 +1,9 @@
-import requests, urllib.parse, json, pathlib, hashlib, time, sys
+import requests, urllib.parse, json, pathlib, hashlib, time, logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 from collections import defaultdict, deque
+
+logger = logging.getLogger(__name__)
 
 class CircuitBreaker:
     """Circuit breaker per domain"""
@@ -25,12 +27,12 @@ class CircuitBreaker:
         
         if self.failures[domain] >= self.threshold:
             self.circuit_open_until[domain] = time.time() + self.cooldown_s
-            print(json.dumps({
+            logger.warning(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "event": "circuit_open",
                 "domain": domain,
                 "failures": self.failures[domain]
-            }), file=sys.stderr)
+            }))
     
     def is_open(self, domain: str) -> bool:
         """Check if circuit is open"""
@@ -41,11 +43,11 @@ class CircuitBreaker:
             # Circuit closed, reset
             del self.circuit_open_until[domain]
             self.failures[domain] = 0
-            print(json.dumps({
+            logger.info(json.dumps({
                 "ts": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 "event": "circuit_closed",
                 "domain": domain
-            }), file=sys.stderr)
+            }))
             return False
         
         return True
@@ -93,7 +95,7 @@ class HTTPCache:
             if age > self.ttl_s:
                 return None  # Expired
             return data
-        except:
+        except Exception:
             return None
     
     def set(self, key: str, response_bytes: bytes, headers: Dict[str, Any], etag: Optional[str] = None):
@@ -133,7 +135,7 @@ class Net:
         elif self.allowlist and not any(u.netloc.endswith(d) for d in self.allowlist):
             raise ValueError(f"domain not allowlisted: {u.netloc}")
     
-    def _emit_telemetry(self, tool: str, domain: str, duration_ms: int, 
+    def _emit_telemetry(self, tool: str, domain: str, duration_ms: int,
                        cache_hit: bool = False, revalidated: bool = False,
                        error: Optional[str] = None):
         """Emit structured telemetry"""
@@ -146,7 +148,7 @@ class Net:
             "result": "ERROR" if error else "OK",
             "error": error
         }
-        print(json.dumps(telemetry), file=sys.stderr)
+        logger.info(json.dumps(telemetry))
     
     def head(self, params: Dict[str, Any]):
         """HEAD request with caching and circuit breaking"""

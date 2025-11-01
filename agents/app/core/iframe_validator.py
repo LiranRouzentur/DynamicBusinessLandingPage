@@ -17,6 +17,8 @@ except ImportError:
     Page = None
 
 
+# Loads HTML in headless Chrome via Playwright, validates rendering, images, and collects errors.
+# Returns {passed, errors, screenshot (base64 PNG), console_logs, image_validation}; gracefully degrades if Playwright missing.
 async def validate_in_iframe(html_content: str, timeout_ms: int = 10000) -> Dict[str, Any]:
     """
     Validate HTML by loading it in a sandboxed iframe
@@ -258,12 +260,13 @@ async def validate_in_iframe(html_content: str, timeout_ms: int = 10000) -> Dict
         except Exception as img_err:
             logger.warning(f"[IframeValidator] Image validation failed: {img_err}")
         
-        # Optionally take screenshot (smaller, for debugging only)
+        # Take screenshot for visual validation (PNG for better quality)
         screenshot_base64 = None
         try:
-            screenshot_bytes = await page.screenshot(full_page=False, type="jpeg", quality=60)  # Lower quality, viewport only
+            # Use PNG for text-heavy UI, full_page=False for viewport only (faster)
+            screenshot_bytes = await page.screenshot(full_page=False, type="png")
             screenshot_base64 = base64.b64encode(screenshot_bytes).decode()
-            logger.info(f"[IframeValidator] Screenshot captured ({len(screenshot_base64)} bytes)")
+            logger.info(f"[IframeValidator] Screenshot captured for visual validation ({len(screenshot_base64)} bytes)")
         except Exception as screenshot_err:
             logger.warning(f"[IframeValidator] Screenshot failed: {screenshot_err}")
         
